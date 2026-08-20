@@ -94,8 +94,13 @@ def test_empty_csv_rejected() -> None:
 
 
 @pytest.mark.parametrize("missing", sorted(REQUIRED))
-def test_missing_secret_rejected(missing: str) -> None:
+def test_missing_secret_rejected(
+    missing: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     values = {k: v for k, v in REQUIRED.items() if k != missing}
+    # tests/conftest.py exports dummy env values so `app.main` can be imported;
+    # clear the missing key's env too, else Settings() would find it there.
+    monkeypatch.delenv(missing.upper(), raising=False)
     with pytest.raises(ValidationError):
         Settings(**values)
 
