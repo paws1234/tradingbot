@@ -53,6 +53,14 @@ def rising_series(n: int = 30) -> pd.Series:
     )
 
 
+def falling_series(n: int = 30) -> pd.Series:
+    """Close of a strictly falling market: each bar down by exactly 1."""
+    return pd.Series(
+        np.arange(float(n), 0.0, -1.0),
+        index=pd.date_range(T0, periods=n, freq="15min", tz="UTC"),
+    )
+
+
 # --- moving averages -------------------------------------------------------
 
 
@@ -162,6 +170,17 @@ def test_adx_flat_series_is_nan_not_zero() -> None:
     # strategies read NaN as "no trend signal", which is the safe read.
     flat = make_series([10.0] * 30)
     assert adx(flat, flat, flat, 14).isna().all()
+
+
+def test_adx_downtrend_known_value_and_warmup() -> None:
+    # Pure downtrend: minus_dm dominates, so dx saturates at 100 once ATR
+    # (and therefore -DI) becomes valid at index 13 — the mirror of the
+    # uptrend case above.
+    close = falling_series()
+    d = adx(close, close + 1.0, close, 14)
+    assert d.iloc[:13].isna().all()
+    assert d.iloc[13] == pytest.approx(100.0)
+    assert np.allclose(d.iloc[13:], 100.0)
 
 
 # --- donchian --------------------------------------------------------------
