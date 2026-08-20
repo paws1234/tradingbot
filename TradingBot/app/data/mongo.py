@@ -19,6 +19,8 @@ naive datetimes would be stored with an assumed UTC zone and silently
 corrupt blackout-window math.
 """
 
+from datetime import datetime, timezone
+
 from motor.motor_asyncio import (
     AsyncIOMotorClient,
     AsyncIOMotorCollection,
@@ -26,11 +28,25 @@ from motor.motor_asyncio import (
 )
 
 from app.config import Settings
+from app.models.schemas import OrderResult, Signal, TradeDecision
 
 DAILY_CONTEXT = "daily_context"
 ACCOUNT_STATE = "account_state"
 TRADE_LOGS = "trade_logs"
 SIGNALS = "signals"
+
+
+def _signal_context(signal: Signal) -> dict:
+    """The signal fields an audit entry carries, shared by decision and order logs."""
+    return {
+        "strategy": signal.strategy,
+        "instrument": signal.instrument,
+        "side": signal.side,
+        "entry": signal.entry,
+        "stop_loss": signal.stop_loss,
+        "take_profit": signal.take_profit,
+        "signal_time": signal.timestamp,
+    }
 
 
 class MongoStore:
@@ -90,6 +106,44 @@ class MongoStore:
         """Append one entry to the trade audit trail; returns its `_id`."""
         result = await self.trade_logs.insert_one(document)
         return str(result.inserted_id)
+
+    async def log_decision(self, signal: Signal, decision: TradeDecision) -> str:
+        """Append one DeepSeek veto verdict with its signal context (Task 13).
+
+        Every verdict — approved or vetoed — is recorded so the audit trail
+        shows what the gate was shown and what it concluded. The entry is
+        stamped with the decision time, not the signal time.
+        """
+        document = {
+            "kind": "decision",
+            **_signal_context(signal),
+            "execute": decision.execute,
+            "confidence": decision.confidence,
+            "reason": decision.reason,
+            "timestamp": datetime.now(timezone.utc),
+        }
+        return await self.insert_trade_log(document)
+
+    async def log_order(
+        self,
+        order: OrderResult,
+        signal: Signal,
+        decision: TradeDecision,
+    ) -> str:
+        """Append one placed order, linked to the signal and verdict behind it."""
+        document = {
+            "kind": "order",
+            **_signal_context(signal),
+            "order_id": order.order_id,
+            "status": order.status,
+            "units": order.units,
+            "price": order.price,
+            "created_at": order.created_at,
+            "decision_confidence": decision.confidence,
+            "decision_reason": decision.reason,
+            "timestamp": datetime.now(timezone.utc),
+        }
+        return await self.insert_trade_log(document)
 
     async def insert_signal(self, document: dict) -> str:
         """Append one signal to the signal record; returns its `_id`."""
