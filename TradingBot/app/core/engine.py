@@ -229,6 +229,19 @@ class TradingEngine:
         await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks.clear()
 
+    def status(self) -> dict:
+        """Runtime snapshot for /status: started flag, active scope, work in flight."""
+        return {
+            "started": self._started,
+            "instruments": list(self._settings.instruments),
+            "strategies": list(self._settings.strategies),
+            "pending_signals": len(self._pending),
+            "history_bars": {
+                instrument: len(frame)
+                for instrument, frame in self._history.items()
+            },
+        }
+
     async def _run_instrument(self, instrument: str) -> None:
         """Backfill, then stream ticks into candles and run the pipeline."""
         candles = await self._backfill(instrument)

@@ -707,6 +707,21 @@ async def test_stop_is_noop_before_start(
     assert h.engine._started is False
 
 
+def test_status_snapshots_runtime_state(
+    make_engine: Callable[..., Harness],
+) -> None:
+    h = make_engine()
+    h.engine._pending.add(("asia_sweep", "XAU_USD", T0.date(), "BUY"))
+
+    snapshot = h.engine.status()
+
+    assert snapshot["started"] is False
+    assert snapshot["pending_signals"] == 1
+    assert snapshot["instruments"] == ["XAU_USD"]
+    assert snapshot["strategies"] == ALL_STRATEGIES
+    assert snapshot["history_bars"] == {}
+
+
 @pytest.mark.asyncio
 async def test_stream_builds_candles_and_dispatches(
     make_engine: Callable[..., Harness], monkeypatch,

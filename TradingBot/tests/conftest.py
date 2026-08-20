@@ -1,5 +1,6 @@
 """Shared fixtures for the TradingBot test suite."""
 
+import os
 from collections.abc import Callable
 
 import pytest
@@ -13,6 +14,13 @@ REQUIRED_SETTINGS = {
     "mongodb_uri": "mongodb://localhost:27017",
     "finnhub_api_key": "finnhub-key",
 }
+
+# ``app.main`` builds the production app at import time (``app = create_app()``),
+# which validates the full settings against the environment. Export dummy values
+# (setdefault: real env wins) so any test can ``from app.main import create_app``
+# without a committed .env.
+for _name, _value in REQUIRED_SETTINGS.items():
+    os.environ.setdefault(_name.upper(), str(_value))
 
 
 @pytest.fixture
