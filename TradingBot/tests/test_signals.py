@@ -7,9 +7,11 @@ stop, SL/TP bracketing the entry on the correct side, and
 ``pending_ai_veto=True``. The series are deterministic — no randomness — so
 the emitted signal (and its absence elsewhere) is reproducible.
 
-Lookahead safety is pinned indirectly: entries fire on a closed bar's close,
-and the indicator helpers already shift their windows (see
-``tests/test_indicators.py``).
+Lookahead safety is pinned two ways: the indicator helpers already shift
+their windows (see ``tests/test_indicators.py``), and the two tests at the
+bottom of this file assert it at the signal layer — a breakout fires only on
+the closed bar, and the H1 trend join reads the *previous* hour's flag, never
+the current one.
 """
 
 from datetime import datetime, timezone
@@ -19,6 +21,7 @@ import pandas as pd
 import pytest
 
 from app.config import STRATEGY_IDS
+from app.indicators.technical import ema
 from app.models.schemas import Signal
 from app.strategy.signals import (
     STRATEGY_REGISTRY,
@@ -201,8 +204,13 @@ def test_ema_fvg_trend_direction_flips_signal_side() -> None:
         index=h1.index,
     )
     sigs = ema_fvg_signals(m15, falling, "EUR_USD")
-    assert sigs
-    assert all(sig.side == "SELL" for sig in sigs)
+    assert len(sigs) == 1
+    sig = sigs[0]
+    assert sig.side == "SELL"
+    assert sig.entry == pytest.approx(98.75)
+    assert sig.reason == "bearish_ema_stack_fvg_pullback"
+    assert sig.pending_ai_veto is True
+    assert_bracketed(sig)
 
 
 # --- atr_breakout ----------------------------------------------------------
@@ -227,6 +235,29 @@ def test_atr_breakout_squeeze_then_donchian_break_emits_buy() -> None:
     assert sig.side == "BUY"
     assert sig.entry == pytest.approx(105.0)
     assert sig.reason == "donchian_breakout_squeeze"
+    assert sig.pending_ai_veto is True
+    assert_bracketed(sig)
+
+
+def test_atr_breakout_squeeze_then_donchian_breakdown_emits_sell() -> None:
+    n = 70
+    idx = pd.date_range(T0, periods=n, freq="15min", tz="UTC")
+    df = pd.DataFrame({"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0}, index=idx)
+    # Narrow range 12:00 onward collapses ATR below its own SMA (squeeze).
+    df.loc[idx[31]:, "high"] = 100.01
+    df.loc[idx[31]:, "low"] = 99.99
+    df.loc[idx[31]:, "close"] = 100.0
+    # 16:00: volatility expands and price closes through the 20-bar low.
+    df.loc[idx[64], ["open", "high", "low", "close"]] = [100.0, 100.1, 80.0, 95.0]
+
+    sigs = atr_breakout_signals(df, pd.DataFrame(), "XAU_USD")
+
+    assert len(sigs) == 1
+    sig = sigs[0]
+    assert sig.strategy == "atr_breakout"
+    assert sig.side == "SELL"
+    assert sig.entry == pytest.approx(95.0)
+    assert sig.reason == "donchian_breakdown_squeeze"
     assert sig.pending_ai_veto is True
     assert_bracketed(sig)
 
@@ -271,3 +302,128 @@ def test_mean_reversion_oversold_band_fade_emits_buy() -> None:
     assert sig.reason == "bb_oversold_adx_sideways"
     assert sig.pending_ai_veto is True
     assert_bracketed(sig)
+
+
+def test_mean_reversion_overbought_band_fade_emits_sell() -> None:
+    # Mirror of the oversold series around 100: the dip becomes a spike, so
+    # the same deterministic OU data now breaks the UPPER band with RSI > 72
+    # while ADX still reads a sideways regime (it is sign-flip invariant).
+    closes = [200.0 - c for c in mean_reversion_closes()]
+    index = pd.date_range(T0, periods=len(closes), freq="15min", tz="UTC")
+    df = pd.DataFrame(
+        {"open": closes, "high": [c + 0.3 for c in closes],
+         "low": [c - 0.3 for c in closes], "close": closes},
+        index=index,
+    )
+
+    sigs = mean_reversion_signals(df, pd.DataFrame(), "EUR_USD")
+
+    assert len(sigs) == 1
+    sig = sigs[0]
+    assert sig.strategy == "mean_reversion"
+    assert sig.side == "SELL"
+    assert sig.entry == pytest.approx(102.4055)
+    assert sig.reason == "bb_overbought_adx_sideways"
+    assert sig.pending_ai_veto is True
+    assert_bracketed(sig)
+
+
+# --- lookahead safety ------------------------------------------------------
+
+
+def test_atr_breakout_fires_only_on_the_closed_breakout_bar() -> None:
+    """Entries use closed bars only: the signal appears at bar 64 once that
+    bar has closed, never before it, and never moved by bars after it."""
+    n = 70
+    idx = pd.date_range(T0, periods=n, freq="15min", tz="UTC")
+    df = pd.DataFrame({"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0}, index=idx)
+    # Narrow range 12:00 onward collapses ATR below its own SMA (squeeze).
+    df.loc[idx[31]:, "high"] = 100.01
+    df.loc[idx[31]:, "low"] = 99.99
+    df.loc[idx[31]:, "close"] = 100.0
+    # 16:00: volatility expands and price closes through the 20-bar high.
+    df.loc[idx[64], ["open", "high", "low", "close"]] = [100.0, 120.0, 99.9, 105.0]
+
+    # Bar 64 is closed -> exactly one signal, stamped on it.
+    sigs = atr_breakout_signals(df, pd.DataFrame(), "XAU_USD")
+    assert len(sigs) == 1
+    assert sigs[0].timestamp == idx[64]
+
+    # Bar 64 not yet closed -> no signal from the closed bars before it.
+    assert atr_breakout_signals(df.iloc[:64], pd.DataFrame(), "XAU_USD") == []
+
+    # A later bar cannot create a second signal or move the original.
+    later = pd.DataFrame(
+        {"open": [105.0], "high": [110.0], "low": [104.0], "close": [108.0]},
+        index=pd.date_range(
+            idx[-1] + pd.Timedelta(minutes=15), periods=1, freq="15min", tz="UTC"
+        ),
+    )
+    sigs = atr_breakout_signals(pd.concat([df, later]), pd.DataFrame(), "XAU_USD")
+    assert len(sigs) == 1
+    assert sigs[0].timestamp == idx[64]
+
+
+def test_ema_fvg_trend_join_shifts_the_h1_flag_by_one_bar() -> None:
+    """The H1-trend join must not leak the current hour's flag (strategy.md §6.2).
+
+    The trend an M15 bar reads is the *previous* H1 bar's — the join shifts
+    the flag series by one H1 bar before the backward asof join, so a bar at
+    hour H only ever sees the flag of H-1. Verified as a control variable: the
+    SAME M15 frame (identical FVG + RSI conditions) against two H1 frames whose
+    first up-trended hour differs by one. In case A the target hour's own flag
+    is up yet invisible to it — a leaked join would fire, the shifted one does
+    not; in case B that hour's flag is up, so the target bar fires.
+    """
+
+    def make_h1(last_decline: float, n_decline: int) -> pd.DataFrame:
+        decline = np.arange(150.0, last_decline, -1.0)  # exclusive stop
+        rally = last_decline + np.arange(1, 251) * 0.9
+        closes = np.concatenate([decline, rally])
+        return pd.DataFrame(
+            {"close": closes},
+            index=pd.date_range(T0, periods=len(closes), freq="1h", tz="UTC"),
+        )
+
+    def first_up_hour(h1: pd.DataFrame) -> int:
+        up = (ema(h1["close"], 20) > ema(h1["close"], 50)) & (
+            ema(h1["close"], 50) > ema(h1["close"], 200)
+        )
+        return int(np.where(up.values)[0][0])
+
+    h1_a = make_h1(50.0, 100)
+    h1_b = make_h1(51.0, 99)  # rally one hour earlier than case A
+    hour_a = first_up_hour(h1_a)
+    hour_b = first_up_hour(h1_b)
+    assert hour_b == hour_a - 1
+    # Precondition: hour_a-1 is not up-trended in case A, so the M15 bar at
+    # hour_a:15 must read a non-up flag — unless the join leaked hour_a's own
+    # just-closed up flag, which is exactly the bug this test pins.
+    up_a = (ema(h1_a["close"], 20) > ema(h1_a["close"], 50)) & (
+        ema(h1_a["close"], 50) > ema(h1_a["close"], 200)
+    )
+    assert not bool(up_a.iloc[hour_a - 1])
+
+    # One M15 frame: micro-alternation (RSI ~45, a defined sideways value)
+    # with a single bullish FVG gap at hour_a:15. Both cases share it, so the
+    # FVG/RSI conditions are identical — only the trend flag differs.
+    n = hour_a * 4 + 5
+    closes = [100.0]
+    for i in range(1, n):
+        closes.append(closes[-1] + (-0.025 if i % 2 == 1 else 0.015))
+    closes = np.array(closes)
+    target = hour_a * 4 + 1  # hour_a:15
+    closes[target] = closes[target - 2] + 0.045
+    m15 = pd.DataFrame(
+        {"open": closes, "high": closes + 0.02, "low": closes - 0.02, "close": closes},
+        index=pd.date_range(T0, periods=len(closes), freq="15min", tz="UTC"),
+    )
+
+    # Case A: hour_a's own flag is up but unreadable until hour_a+1 -> none.
+    assert ema_fvg_signals(m15, h1_a, "EUR_USD") == []
+
+    # Case B: hour_a-1 is up-trended -> the hour_a:15 bar sees it and fires.
+    sigs = ema_fvg_signals(m15, h1_b, "EUR_USD")
+    assert len(sigs) == 1
+    assert sigs[0].side == "BUY"
+    assert sigs[0].timestamp == m15.index[target]

@@ -165,7 +165,7 @@
 
 ## Phase 6 — Tests & verification
 
-- [ ] Task 19: Add `tests/test_indicators.py` + `test_signals.py` — known series, lookahead safety
+- [~] Task 19: Add `tests/test_indicators.py` + `test_signals.py` — known series, lookahead safety
   - Acceptance criteria: indicator tests assert known hand-computed series
   - Acceptance criteria: signal tests verify no lookahead (shift(1))
   - Scope in: `test_indicators.py`
