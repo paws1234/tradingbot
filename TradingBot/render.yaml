@@ -1,0 +1,74 @@
+# Render blueprint for the TradingBot web service.
+#
+# Import this file from the Render dashboard (New → Blueprint, pick the
+# paws1234/tradingbot repo): it creates the service, applies the env defaults
+# below, and leaves the `sync: false` secrets to be filled in once in the
+# dashboard. Full instructions in README → Deploy to Render.
+#
+# The service runs the image built from TradingBot/Dockerfile (python:3.12-slim,
+# non-root) via uvicorn. Render's built-in health checks poll `/health`, and
+# UptimeRobot pings the same endpoint every 5 minutes to keep the free-tier
+# service awake.
+
+services:
+  - type: web
+    name: tradingbot
+    runtime: docker
+    repo: https://github.com/paws1234/tradingbot
+    plan: free
+    region: oregon
+    # Deploy on every push to the repo's default branch.
+    autoDeploy: true
+    healthCheckPath: /health
+    # Dockerfile lives in TradingBot/ (relative to the repo root).
+    dockerContext: TradingBot
+    dockerfilePath: Dockerfile
+
+    envVars:
+      # --- Secrets — fill in once in the Render dashboard (never committed) ---
+      - key: OANDA_API_KEY
+        sync: false
+      - key: OANDA_ACCOUNT_ID
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: FINNHUB_API_KEY
+        sync: false
+
+      # --- Defaults matching app/config.py and .env.example ---
+      - key: ACCOUNT_TYPE
+        value: practice
+      - key: INSTRUMENTS
+        value: XAU_USD
+      - key: GRANULARITY
+        value: M15
+      - key: DEEPSEEK_BASE_URL
+        value: https://api.deepseek.com
+      - key: DEEPSEEK_MODEL
+        value: deepseek-chat
+      - key: MIN_CONFIDENCE
+        value: "7"
+      - key: MONGODB_DB
+        value: tradingbot
+      - key: STRATEGIES
+        value: asia_sweep,ema_fvg,atr_breakout,mean_reversion
+      - key: DAILY_LOSS_LIMIT_PCT
+        value: "0.03"
+      - key: RISK_PER_TRADE_PCT
+        value: "0.01"
+      - key: BLACKOUT_MINUTES
+        value: "30"
+      - key: RSI_OVERSOLD
+        value: "30"
+      - key: RSI_OVERBOUGHT
+        value: "70"
+      - key: EMA_PERIOD
+        value: "200"
+      - key: ATR_SL_MULT
+        value: "2"
+      - key: ATR_TP_MULT
+        value: "3"
+      - key: PORT
+        value: "8000"

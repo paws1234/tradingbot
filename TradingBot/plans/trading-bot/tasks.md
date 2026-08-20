@@ -155,7 +155,7 @@
   - Scope out: orchestration / deploy config (render.yaml)
   - Scope out: app code changes
 
-- [ ] Task 18: Add `render.yaml` + README — Render env vars, UptimeRobot `/health` setup
+- [x] Task 18: Add `render.yaml` + README — Render env vars, UptimeRobot `/health` setup
   - Acceptance criteria: render.yaml declares env vars + web service
   - Acceptance criteria: README documents Render deploy + UptimeRobot `/health` ping
   - Scope in: render.yaml blueprint
