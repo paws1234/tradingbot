@@ -1,8 +1,15 @@
 # CI/CD pipeline for the TradingBot project (this repo's remote is GitHub).
 #
-# Runs on every push and pull request: install the pinned dependencies, run
-# the pytest suite, and build the Docker image. No linter is configured for
-# this stack, so the lint stage is intentionally skipped.
+# Runs twice around a merge:
+#   - on `pull_request`               → the PRE-MERGE gate that auto-merge waits for
+#   - on `push` (default branch)      → the POST-MERGE verification re-run
+# It installs the pinned dependencies, runs the pytest suite, and builds the
+# Docker image. No linter is configured for this stack, so the lint stage is
+# intentionally skipped.
+#
+# To gate auto-merge on this pipeline: make the "Tests" job a required status
+# check in branch protection for the default branch, and arm auto-merge on the
+# PR (/create-pr does this via `git_host.sh pr merge-auto`).
 #
 # The pipeline is standard for the Python/FastAPI stack and needs no
 # per-project modification — the app and its requirements live in TradingBot/.
