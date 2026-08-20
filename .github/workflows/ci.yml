@@ -35,10 +35,11 @@ jobs:
   docker:
     name: Build Docker image
     runs-on: ubuntu-latest
-    # The Dockerfile ships in Phase 5 (task 17); until it exists this job is
-    # a no-op so early PRs stay green.
-    if: ${{ hashFiles('TradingBot/Dockerfile') != '' }}
     steps:
       - uses: actions/checkout@v4
       - name: Build image
+        # The Dockerfile ships in Phase 5 (task 17); until it exists this step
+        # is a no-op so early PRs stay green. hashFiles is only available in
+        # step-level `if` conditions, not job-level ones.
+        if: ${{ hashFiles('TradingBot/Dockerfile') != '' }}
         run: docker build -t tradingbot TradingBot/
