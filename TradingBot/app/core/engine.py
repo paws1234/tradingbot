@@ -339,6 +339,7 @@ class TradingEngine:
             account_state, self._settings.daily_loss_limit_pct
         )
         if halted:
+            self._pending.pop(key, None)
             logger.info(
                 "signal blocked by circuit-breaker for %s: %s", signal.instrument, reason
             )
@@ -351,6 +352,7 @@ class TradingEngine:
         blackouts = (context or {}).get("blackouts", [])
         blocked, reason = in_blackout(signal.timestamp, blackouts)
         if blocked:
+            self._pending.pop(key, None)
             logger.info(
                 "signal blocked by blackout for %s: %s", signal.instrument, reason
             )

@@ -467,8 +467,10 @@ async def test_circuit_breaker_blocks_before_gate(
     }
 
     outcome = await h.engine._process_signal(make_signal())
+    key = ("asia_sweep", "XAU_USD", T0.date(), "BUY")
 
     assert outcome["outcome"] == OUTCOME_BLOCKED_BREAKER
+    assert key not in h.engine._pending
     assert h.deepseek.calls == []  # the gate is never consulted
     assert h.store.signal_log == []  # blocked signals are not recorded
     assert h.oanda.placed == []
@@ -510,8 +512,10 @@ async def test_news_blackout_blocks_signal(
     }
 
     outcome = await h.engine._process_signal(make_signal())
+    key = ("asia_sweep", "XAU_USD", T0.date(), "BUY")
 
     assert outcome["outcome"] == OUTCOME_BLOCKED_BLACKOUT
+    assert key not in h.engine._pending
     assert h.deepseek.calls == []
     assert h.oanda.placed == []
     assert ("asia_sweep", "XAU_USD", T0.date(), "BUY") not in h.engine._pending
