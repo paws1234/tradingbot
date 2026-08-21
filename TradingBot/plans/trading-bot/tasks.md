@@ -216,7 +216,7 @@
   - Scope in: engine pending lifecycle + invalidation predicates + tests
   - Scope out: order management beyond entry (trailing/cancel/modify)
 
-- [ ] Task 27: Implement instrument min/max + margin guards in `app/strategy/sizing.py` — fail-safe None on violation
+- [~] Task 27: Implement instrument min/max + margin guards in `app/strategy/sizing.py` — fail-safe None on violation
   - Acceptance criteria: min/max unit map for XAU_USD, EUR_USD, GBP_USD enforced
   - Acceptance criteria: margin check vs `marginAvailable` (fallback notional cap) enforced
   - Acceptance criteria: `build_market_order` returns None on violation; tests added

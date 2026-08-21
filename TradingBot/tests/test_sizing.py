@@ -9,7 +9,9 @@ Covers the sizing hand-calc and the OANDA MARKET payload contract:
   ``OandaClient.place_market_order`` transports — MARKET, signed units
   (positive BUY / negative SELL), ``FOK``, ``stopLossOnFill`` /
   ``takeProfitOnFill`` at the signal's hard stop and take profit, and
-  ``None`` when no whole unit can be sized.
+  ``None`` when no whole unit can be sized, when the size falls outside
+  the instrument's [min, max] unit bounds (strategy.md §6.5), or when the
+  order notional exceeds ``marginAvailable`` / the fallback notional cap.
 
 All functions are pure and synchronous — no fixtures or I/O needed.
 """
@@ -17,7 +19,11 @@ All functions are pure and synchronous — no fixtures or I/O needed.
 from datetime import datetime, timezone
 
 from app.models.schemas import Signal
-from app.strategy.sizing import build_market_order, compute_units
+from app.strategy.sizing import (
+    INSTRUMENT_UNIT_LIMITS,
+    build_market_order,
+    compute_units,
+)
 
 T0 = datetime(2026, 8, 18, 12, 0, tzinfo=timezone.utc)
 
@@ -122,3 +128,79 @@ def test_build_market_order_returns_none_when_no_whole_unit() -> None:
     # 50 x 0.01 / 10 = 0.05 → floors to 0 units: no sub-minimum order.
     spec = build_market_order(make_signal("BUY"), 50.0, 0.01)
     assert spec is None
+
+
+# --- instrument min/max guards (strategy.md §6.5) --------------------------
+
+
+def test_instrument_unit_limits_map() -> None:
+    # Pins the config map Task 27 ships: three traded instruments only.
+    assert INSTRUMENT_UNIT_LIMITS == {
+        "XAU_USD": (10, 1_000_000),
+        "EUR_USD": (1, 10_000_000),
+        "GBP_USD": (1, 10_000_000),
+    }
+
+
+def test_build_market_order_returns_none_below_instrument_min() -> None:
+    # XAU_USD min is 10 units; balance 5000 sizes 5 units → refused.
+    # Notional 500 is inside the fallback cap, so the refusal is the min.
+    spec = build_market_order(make_signal("BUY"), 5000.0, 0.01)
+    assert spec is None
+
+
+def test_build_market_order_returns_none_above_instrument_max() -> None:
+    # XAU_USD max is 1,000,000 units; balance 1.5e9 sizes 1,500,000 → refused.
+    # A generous margin isolates the instrument-max guard.
+    spec = build_market_order(
+        make_signal("BUY"), 1_500_000_000.0, 0.01, margin_available=1e12
+    )
+    assert spec is None
+
+
+def test_build_market_order_fx_majors_within_limits() -> None:
+    # 5 units is inside [1, 10,000,000] for both FX majors → not refused.
+    for instrument in ("EUR_USD", "GBP_USD"):
+        spec = build_market_order(make_signal("BUY", instrument), 5000.0, 0.01)
+        assert spec is not None
+        assert spec["order"]["units"] == "5"
+
+
+# --- margin guard (strategy.md §6.5) ---------------------------------------
+
+
+def test_build_market_order_returns_none_when_notional_exceeds_margin() -> None:
+    # Balance 1e6 sizes 1000 units (within XAU bounds); notional 1000 x 100 =
+    # 100,000 > marginAvailable 50,000 → refused.
+    spec = build_market_order(
+        make_signal("BUY"), 1_000_000.0, 0.01, margin_available=50_000.0
+    )
+    assert spec is None
+
+
+def test_build_market_order_passes_when_margin_sufficient() -> None:
+    # Same size, notional 100,000 ≤ marginAvailable 200,000 → allowed.
+    spec = build_market_order(
+        make_signal("BUY"), 1_000_000.0, 0.01, margin_available=200_000.0
+    )
+    assert spec is not None
+    assert spec["order"]["units"] == "1000"
+
+
+def test_build_market_order_margin_guard_applies_to_sell() -> None:
+    # Shorts require margin too: SELL 1000 units has the same 100,000 notional.
+    spec = build_market_order(
+        make_signal("SELL"), 1_000_000.0, 0.01, margin_available=50_000.0
+    )
+    assert spec is None
+
+
+def test_build_market_order_fallback_cap_when_margin_missing() -> None:
+    # No margin_available → fallback cap 50,000: notional 100,000 → refused.
+    spec = build_market_order(make_signal("BUY"), 1_000_000.0, 0.01)
+    assert spec is None
+
+    # Notional 10,000 (100 units) is inside the fallback cap → allowed.
+    ok = build_market_order(make_signal("BUY"), 100_000.0, 0.01)
+    assert ok is not None
+    assert ok["order"]["units"] == "100"

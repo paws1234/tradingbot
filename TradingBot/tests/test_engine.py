@@ -658,6 +658,24 @@ async def test_unsized_signal_skips_dispatch(
     assert len(h.store.decisions) == 1  # the veto still ran and was logged
 
 
+@pytest.mark.asyncio
+async def test_dispatch_refused_when_margin_insufficient(
+    make_engine: Callable[..., Harness],
+) -> None:
+    # Balance 10000 sizes 10 XAU units (within instrument bounds); notional
+    # 10 x 100 = 1000 > marginAvailable 500 → sizing refuses, no order.
+    h = make_engine(
+        oanda=FakeOanda(
+            summary={"balance": "10000.0000", "marginAvailable": "500.0000"}
+        )
+    )
+
+    outcome = await h.engine._process_signal(make_signal())
+
+    assert outcome["outcome"] == OUTCOME_UNSIZED
+    assert h.oanda.placed == []
+
+
 # --- process_candle: strategy feed ------------------------------------------
 
 
