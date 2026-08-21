@@ -370,11 +370,21 @@ class TradingEngine:
 
         summary = await self._oanda.get_account_summary()
         balance = float(summary["balance"])
+        margin_available = (
+            float(summary["marginAvailable"])
+            if "marginAvailable" in summary
+            else None
+        )
         order_spec = build_market_order(
-            signal, balance, self._settings.risk_per_trade_pct
+            signal,
+            balance,
+            self._settings.risk_per_trade_pct,
+            margin_available=margin_available,
         )
         if order_spec is None:
-            return self._outcome(signal, OUTCOME_UNSIZED, "balance cannot size one unit")
+            return self._outcome(
+                signal, OUTCOME_UNSIZED, "size outside instrument/margin limits"
+            )
 
         order = await self._oanda.place_market_order(order_spec)
         await self._store.log_order(order, signal, decision)

@@ -35,3 +35,4 @@ Host: GitHub | Repo: paws1234/tradingbot | Default branch: main
 | Task 24 | #34 | closed | Update root `strategy.md` + plan docs — record the 10-point strategy review resolutions (lookahead convention, `SQUEEZE_LOOKBACK`, setup lifecycle states, sizing guards) |
 | Task 25 | #49 | closed | Implement rolling ATR squeeze lookback in `app/strategy/signals.py` — `BO_SQUEEZE_LOOKBACK=5`, breakout requires any squeeze in the prior N bars |
 | Task 26 | #51 | open | Implement explicit setup lifecycle in `app/core/engine.py` — pending → filled/invalidated/expired with per-strategy invalidation predicates |
+| Task 27 | #53 | open | Implement instrument min/max + margin guards in `app/strategy/sizing.py` — fail-safe None on violation |
