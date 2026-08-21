@@ -208,7 +208,7 @@
   - Scope in: `signals.py` squeeze guard + `BO_SQUEEZE_LOOKBACK` constant + tests
   - Scope out: other strategies / engine
 
-- [~] Task 26: Implement explicit setup lifecycle in `app/core/engine.py` — pending → filled/invalidated/expired with per-strategy invalidation predicates
+- [x] Task 26: Implement explicit setup lifecycle in `app/core/engine.py` — pending → filled/invalidated/expired with per-strategy invalidation predicates
   - Acceptance criteria: `_pending` becomes a state map; dispatch success marks `filled`
   - Acceptance criteria: a filled/invalidated key frees (strategy, instrument, day, side) for a new setup
   - Acceptance criteria: day rollover marks stale keys `expired`; per-strategy `is_invalidated(df, signal)` predicates added to `signals.py`
