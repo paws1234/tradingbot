@@ -191,7 +191,7 @@
   - Scope out: endpoints beyond `/health`
 
 - [x] Task 22: Fix `finalize_merged.sh` merge detection — grep `#N[^0-9]` misses issue refs at end of a PR-body line [bug]
-- [~] Task 23: Fix `finalize_merged.sh` — `[bug]` tasks can't auto-finalize (`Bug N` rows not mapped to task numbers) [bug]
+- [x] Task 23: Fix `finalize_merged.sh` — `[bug]` tasks can't auto-finalize (`Bug N` rows not mapped to task numbers) [bug]
 
 - [ ] Task 24: Update root `strategy.md` + plan docs — record the 10-point strategy review resolutions (lookahead convention, `SQUEEZE_LOOKBACK`, setup lifecycle states, sizing guards)
   - Acceptance criteria: strategy.md documents the lookahead convention (channels/swings shifted 1 bar; indicators read at bar close) and the direction-safe asia TP formula
