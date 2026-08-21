@@ -311,6 +311,7 @@ class TradingEngine:
         Returns one outcome dict per signal, in emission order.
         """
         frame = self._append_candle(instrument, candle)
+        self._roll_over(frame.index[-1].date())
         self._drop_invalidated(instrument)
         h1 = resample_h1(frame)
         signals = emit_signals(instrument, frame, h1, self._settings.strategies)
