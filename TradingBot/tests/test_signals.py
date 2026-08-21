@@ -390,7 +390,7 @@ def test_ema_fvg_trend_join_shifts_the_h1_flag_by_one_bar() -> None:
     not; in case B that hour's flag is up, so the target bar fires.
     """
 
-    def make_h1(last_decline: float, n_decline: int) -> pd.DataFrame:
+    def make_h1(last_decline: float, _n_decline: int) -> pd.DataFrame:
         decline = np.arange(150.0, last_decline, -1.0)  # exclusive stop
         rally = last_decline + np.arange(1, 251) * 0.9
         closes = np.concatenate([decline, rally])
