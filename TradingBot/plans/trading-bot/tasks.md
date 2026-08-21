@@ -190,4 +190,5 @@
   - Scope out: live external calls
   - Scope out: endpoints beyond `/health`
 
-- [~] Task 22: Fix `finalize_merged.sh` merge detection — grep `#N[^0-9]` misses issue refs at end of a PR-body line [bug]
+- [x] Task 22: Fix `finalize_merged.sh` merge detection — grep `#N[^0-9]` misses issue refs at end of a PR-body line [bug]
+- [~] Task 23: Fix `finalize_merged.sh` — `[bug]` tasks can't auto-finalize (`Bug N` rows not mapped to task numbers) [bug]
