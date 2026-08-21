@@ -55,8 +55,7 @@ Locked decisions:
   instrument→strategy mapping defaults per `strategy.md` §6.3
 - Every signal carries a numeric `stop_loss` and `pending_ai_veto=True`
 - App code lives in `TradingBot/` inside the repo root
-- Strategy review resolutions recorded in root `strategy.md` §1.6/§2.3/§4.2/
-  §6.4/§6.5 (Task 24 docs); Tasks 25–27 implement the code changes
+- Strategy review resolutions recorded in root `strategy.md` §1.6/§2.3/§4.2/§6.4/§6.5 (Task 24 docs); Tasks 25–27 implement the code changes
 
 ## Requirements
 

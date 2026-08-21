@@ -32,4 +32,4 @@ Host: github | Repo: paws1234/tradingbot | Default branch: main
 | Task 21 | #25 | closed | Add `tests/test_api.py` + `test_deepseek.py` — `/health` 200, DeepSeek parse failure → `execute=false` |
 | Bug 1 | #29 | closed | Fix `finalize_merged.sh` merge detection — grep `#N[^0-9]` misses issue refs at end of a PR-body line |
 | Bug 2 | #32 | closed | Fix `finalize_merged.sh` — `[bug]` tasks can't auto-finalize (`Bug N` rows not mapped to task numbers) |
-| Task 24 | #34 | open | Update root `strategy.md` + plan docs — record the 10-point strategy review resolutions (lookahead convention, `SQUEEZE_LOOKBACK`, setup lifecycle states, sizing guards) |
+| Task 24 | #34 | closed | Update root `strategy.md` + plan docs — record the 10-point strategy review resolutions (lookahead convention, `SQUEEZE_LOOKBACK`, setup lifecycle states, sizing guards) |

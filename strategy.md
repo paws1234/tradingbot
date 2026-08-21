@@ -32,7 +32,7 @@ All strategies consume an OHLCV `pandas.DataFrame` indexed by **UTC datetime**:
 - Every rolling window that feeds an entry decision is shifted by 1 bar
   (`shift(1)`) so the signal only uses information available at bar close.
 
-### 1.2 Indicator helpers (implement in `app/indicators/technical.py`)
+### 1.2 Indicator helpers (implement in `TradingBot/app/indicators/technical.py`)
 
 ```python
 import numpy as np
@@ -126,7 +126,7 @@ def session_range(df: pd.DataFrame, start: str, end: str):
 ### 1.5 Signal output contract
 
 All strategies return the same structure (pydantic model `Signal` in
-`app/models/schemas.py`):
+`TradingBot/app/models/schemas.py`):
 
 | field             | type   | values / meaning                              |
 |-------------------|--------|-----------------------------------------------|
@@ -147,7 +147,7 @@ Sizing (Stage 4) uses `entry` and `stop_loss`:
 ### 1.6 Lookahead convention (review resolution)
 
 Every strategy signal is free of lookahead bias by construction (enforced by
-the lookahead-safety tests in `tests/test_signals.py`):
+the lookahead-safety tests in `TradingBot/tests/test_signals.py`):
 
 1. **Indicators are read at bar close.** Entries fire only on closed bars —
    candle `t` is fully formed before its OHLC feeds any decision. No
@@ -536,18 +536,18 @@ explicit state machine in the engine:
   (dedup via §6.2).
 - A successful dispatch marks the key `filled`, freeing it for a new setup.
 - Each strategy exposes an `is_invalidated(df, signal)` predicate in
-  `app/strategy/signals.py`; when it returns true the key is freed as
+  `TradingBot/app/strategy/signals.py`; when it returns true the key is freed as
   `invalidated` and a fresh setup may form on the same
   `(strategy, instrument, day, side)`.
 - At day rollover every still-`pending` key becomes `expired` and is dropped,
   so the next UTC day starts clean.
 
-Implemented by Task 26 (`app/core/engine.py`); the predicates ship in
-`app/strategy/signals.py`.
+Implemented by Task 26 (`TradingBot/app/core/engine.py`); the predicates ship in
+`TradingBot/app/strategy/signals.py`.
 
 ### 6.5 Sizing guards (review resolution)
 
-Stage 4 sizing (`app/strategy/sizing.py`) refuses to build an order that
+Stage 4 sizing (`TradingBot/app/strategy/sizing.py`) refuses to build an order that
 violates an instrument or margin limit. `build_market_order` returns `None` on
 violation and the engine skips dispatch — fail-safe, never a sub-minimum or
 over-leveraged order.
@@ -561,4 +561,4 @@ over-leveraged order.
 - **Fail-safe contract.** `build_market_order` returns `dict | None`; `None`
   means "do not place this order" — the engine logs the outcome and moves on.
 
-Implemented by Task 27 (`app/strategy/sizing.py`).
+Implemented by Task 27 (`TradingBot/app/strategy/sizing.py`).
