@@ -7,9 +7,10 @@
 # Docker image. No linter is configured for this stack, so the lint stage is
 # intentionally skipped.
 #
-# To gate auto-merge on this pipeline: make the "Tests" job a required status
-# check in branch protection for the default branch, and arm auto-merge on the
-# PR (/create-pr does this via `git_host.sh pr merge-auto`).
+# To gate auto-merge: /create-pr runs `git_host.sh require-check <default> Tests
+# copilot-pull-request-reviewer` (branch protection: required `Tests` + Copilot
+# review checks + 1 approving review) and only then arms auto-merge. Branch
+# protection requires a public repo or a paid plan.
 #
 # The pipeline is standard for the Python/FastAPI stack and needs no
 # per-project modification — the app and its requirements live in TradingBot/.
