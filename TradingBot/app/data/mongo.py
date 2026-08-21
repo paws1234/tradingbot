@@ -45,6 +45,9 @@ def _signal_context(signal: Signal) -> dict:
         "entry": signal.entry,
         "stop_loss": signal.stop_loss,
         "take_profit": signal.take_profit,
+        "atr": signal.atr,
+        "reason": signal.reason,
+        "pending_ai_veto": signal.pending_ai_veto,
         "signal_time": signal.timestamp,
     }
 
@@ -119,7 +122,7 @@ class MongoStore:
             **_signal_context(signal),
             "execute": decision.execute,
             "confidence": decision.confidence,
-            "reason": decision.reason,
+            "decision_reason": decision.reason,
             "timestamp": datetime.now(timezone.utc),
         }
         return await self.insert_trade_log(document)
@@ -136,9 +139,11 @@ class MongoStore:
             **_signal_context(signal),
             "order_id": order.order_id,
             "status": order.status,
+            "order_instrument": order.instrument,
             "units": order.units,
             "price": order.price,
             "created_at": order.created_at,
+            "decision_execute": decision.execute,
             "decision_confidence": decision.confidence,
             "decision_reason": decision.reason,
             "timestamp": datetime.now(timezone.utc),

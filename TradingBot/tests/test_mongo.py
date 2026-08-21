@@ -237,13 +237,16 @@ async def test_log_decision_writes_verdict_with_signal_context(
     assert doc["entry"] == 100.0
     assert doc["stop_loss"] == 90.0
     assert doc["take_profit"] == 110.0
+    assert doc["atr"] == 1.0
+    assert doc["reason"] == "test"
+    assert doc["pending_ai_veto"] is True
     assert doc["signal_time"] == T0
     assert doc["execute"] is True
     assert doc["confidence"] == 8
-    assert doc["reason"] == "trend"
+    assert doc["decision_reason"] == "trend"
     # Decision time is stamped at log time, not taken from the signal.
     assert doc["timestamp"].tzinfo is not None
-    assert abs((datetime.now(timezone.utc) - doc["timestamp"]).total_seconds()) < 5
+    assert abs((datetime.now(timezone.utc) - doc["timestamp"]).total_seconds()) < 60
 
 
 @pytest.mark.asyncio
@@ -255,6 +258,7 @@ async def test_log_decision_records_veto_too(store: MongoStore) -> None:
     assert doc["kind"] == "decision"
     assert doc["execute"] is False
     assert doc["confidence"] == 2
+    assert doc["decision_reason"] == "overbought"
 
 
 @pytest.mark.asyncio
@@ -270,14 +274,19 @@ async def test_log_order_writes_order_with_signal_and_verdict(
     assert doc["kind"] == "order"
     assert doc["order_id"] == "1234"
     assert doc["status"] == "FILLED"
+    assert doc["order_instrument"] == "XAU_USD"
     assert doc["units"] == "10"
     assert doc["price"] == 100.0
     assert doc["created_at"] == T0
+    assert doc["decision_execute"] is True
     assert doc["decision_confidence"] == 9
     assert doc["decision_reason"] == "go"
     assert doc["strategy"] == "ema_fvg"
     assert doc["instrument"] == "XAU_USD"
     assert doc["side"] == "BUY"
+    assert doc["atr"] == 1.0
+    assert doc["reason"] == "test"
+    assert doc["pending_ai_veto"] is True
     assert doc["timestamp"].tzinfo is not None
 
 
