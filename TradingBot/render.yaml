@@ -1,7 +1,8 @@
 # Render blueprint for the TradingBot web service.
 #
 # Import this file from the Render dashboard (New → Blueprint, pick the
-# paws1234/tradingbot repo): it creates the service, applies the env defaults
+# paws1234/tradingbot repo, and set the Blueprint Path to
+# `TradingBot/render.yaml`): it creates the service, applies the env defaults
 # below, and leaves the `sync: false` secrets to be filled in once in the
 # dashboard. Full instructions in README → Deploy to Render.
 #
@@ -70,5 +71,3 @@ services:
         value: "2"
       - key: ATR_TP_MULT
         value: "3"
-      - key: PORT
-        value: "8000"

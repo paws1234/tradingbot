@@ -28,8 +28,9 @@ two-step process: import the blueprint, then fill in the secrets.
 ### 1. Import the blueprint
 
 1. In the Render dashboard go to **New → Blueprint** and select the
-   `paws1234/tradingbot` repository.
-2. Render reads `render.yaml`, creates the **tradingbot** web service (Docker
+   `paws1234/tradingbot` repository. When prompted, set the **Blueprint Path**
+   to `TradingBot/render.yaml`.
+2. Render reads the blueprint, creates the **tradingbot** web service (Docker
    runtime, free plan), and applies the env defaults from the blueprint.
 3. `autoDeploy: true` is set, so every push to the default branch redeploys.
    The Dockerfile builds from `TradingBot/` — no build settings to configure.
