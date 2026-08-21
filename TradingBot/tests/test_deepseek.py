@@ -1,4 +1,4 @@
-"""Tests for app.data.deepseek — the Stage 3 JSON veto gate (task 12/21).
+"""Tests for app.data.deepseek — the Stage 3 JSON veto gate (Task 21).
 
 Drives the real ``DeepSeekClient`` with an injected fake ``AsyncOpenAI``
 client — no network. Verification points:
