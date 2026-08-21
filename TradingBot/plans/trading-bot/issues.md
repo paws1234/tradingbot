@@ -30,4 +30,5 @@ Host: github | Repo: paws1234/tradingbot | Default branch: main
 | Task 19 | #23 | closed | Add `tests/test_indicators.py` + `test_signals.py` — known series, lookahead safety |
 | Task 20 | #24 | closed | Add `tests/test_filters.py` + `test_sizing.py` — breaker halts at −3%, blackout blocks, sizing hand-calc |
 | Task 21 | #25 | closed | Add `tests/test_api.py` + `test_deepseek.py` — `/health` 200, DeepSeek parse failure → `execute=false` |
-| Bug 1 | #29 | open | Fix `finalize_merged.sh` merge detection — grep `#N[^0-9]` misses issue refs at end of a PR-body line |
+| Bug 1 | #29 | closed | Fix `finalize_merged.sh` merge detection — grep `#N[^0-9]` misses issue refs at end of a PR-body line |
+| Bug 2 | #32 | open | Fix `finalize_merged.sh` — `[bug]` tasks can't auto-finalize (`Bug N` rows not mapped to task numbers) |
