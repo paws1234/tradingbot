@@ -192,3 +192,31 @@
 
 - [x] Task 22: Fix `finalize_merged.sh` merge detection — grep `#N[^0-9]` misses issue refs at end of a PR-body line [bug]
 - [~] Task 23: Fix `finalize_merged.sh` — `[bug]` tasks can't auto-finalize (`Bug N` rows not mapped to task numbers) [bug]
+
+- [ ] Task 24: Update root `strategy.md` + plan docs — record the 10-point strategy review resolutions (lookahead convention, `SQUEEZE_LOOKBACK`, setup lifecycle states, sizing guards)
+  - Acceptance criteria: strategy.md documents the lookahead convention (channels/swings shifted 1 bar; indicators read at bar close) and the direction-safe asia TP formula
+  - Acceptance criteria: strategy.md adds `SQUEEZE_LOOKBACK` param and lifecycle + sizing-guard sections
+  - Scope in: strategy.md + plan.md + tasks.md documentation only
+  - Scope out: any code changes
+
+- [ ] Task 25: Implement rolling ATR squeeze lookback in `app/strategy/signals.py` — `BO_SQUEEZE_LOOKBACK=5`, breakout requires any squeeze in the prior N bars
+  - Acceptance criteria: `atr_breakout_signals` fires when a squeeze occurred within the prior `BO_SQUEEZE_LOOKBACK` bars (not only the immediate predecessor)
+  - Acceptance criteria: no squeeze in the prior N bars blocks the breakout
+  - Acceptance criteria: tests added for both cases
+  - Scope in: `signals.py` squeeze guard + `BO_SQUEEZE_LOOKBACK` constant + tests
+  - Scope out: other strategies / engine
+
+- [ ] Task 26: Implement explicit setup lifecycle in `app/core/engine.py` — pending → filled/invalidated/expired with per-strategy invalidation predicates
+  - Acceptance criteria: `_pending` becomes a state map; dispatch success marks `filled`
+  - Acceptance criteria: a filled/invalidated key frees (strategy, instrument, day, side) for a new setup
+  - Acceptance criteria: day rollover marks stale keys `expired`; per-strategy `is_invalidated(df, signal)` predicates added to `signals.py`
+  - Acceptance criteria: engine tests cover each transition + re-fire after invalidation
+  - Scope in: engine pending lifecycle + invalidation predicates + tests
+  - Scope out: order management beyond entry (trailing/cancel/modify)
+
+- [ ] Task 27: Implement instrument min/max + margin guards in `app/strategy/sizing.py` — fail-safe None on violation
+  - Acceptance criteria: min/max unit map for XAU_USD, EUR_USD, GBP_USD enforced
+  - Acceptance criteria: margin check vs `marginAvailable` (fallback notional cap) enforced
+  - Acceptance criteria: `build_market_order` returns None on violation; tests added
+  - Scope in: sizing guards + config map + tests
+  - Scope out: fetching live instrument metadata from OANDA
