@@ -201,7 +201,7 @@
   - Scope in: direction-safe asia TP assertions in `TradingBot/tests/test_signals.py` (locks in §2.3 rule 6)
   - Scope out: any code changes beyond the asia TP test assertions
 
-- [ ] Task 25: Implement rolling ATR squeeze lookback in `app/strategy/signals.py` — `BO_SQUEEZE_LOOKBACK=5`, breakout requires any squeeze in the prior N bars
+- [~] Task 25: Implement rolling ATR squeeze lookback in `app/strategy/signals.py` — `BO_SQUEEZE_LOOKBACK=5`, breakout requires any squeeze in the prior N bars
   - Acceptance criteria: `atr_breakout_signals` fires when a squeeze occurred within the prior `BO_SQUEEZE_LOOKBACK` bars (not only the immediate predecessor)
   - Acceptance criteria: no squeeze in the prior N bars blocks the breakout
   - Acceptance criteria: tests added for both cases

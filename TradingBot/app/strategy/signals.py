@@ -67,6 +67,7 @@ EMA_TP_RR = 2.0
 # strategy.md §4.2 — ATR breakout
 ATR_SMA_PERIOD = 50
 SQUEEZE_MULT = 0.82
+BO_SQUEEZE_LOOKBACK = 5  # breakout fires if any of the prior N bars was a squeeze
 DONCHIAN_N = 20
 BO_SL_ATR_MULT = 1.8
 BO_TP_ATR_MULT = 2.5
@@ -236,21 +237,27 @@ def ema_fvg_signals(df: pd.DataFrame, h1: pd.DataFrame, instrument: str) -> list
 def atr_breakout_signals(df: pd.DataFrame, h1: pd.DataFrame, instrument: str) -> list[Signal]:
     """ATR volatility breakout & Donchian squeeze (strategy.md §4).
 
-    A low-volatility squeeze must precede the breakout bar (checked on
-    ``shift(1)``), and the bar itself must expand volatility and close
-    through the prior 20-bar Donchian channel. NY-open session only.
+    A low-volatility squeeze must precede the breakout bar — within the prior
+    ``BO_SQUEEZE_LOOKBACK`` bars, checked on a ``shift(1)``-safe rolling
+    window so the bar immediately before the breakout need not itself be the
+    squeezed one (strategy.md §4.3 rule 1). The bar itself must expand
+    volatility and close through the prior 20-bar Donchian channel. NY-open
+    session only.
     """
     a = atr(df["high"], df["low"], df["close"], ATR_PERIOD)
     a_sma = sma(a, ATR_SMA_PERIOD)
     hh, ll = donchian(df["high"], df["low"], DONCHIAN_N)
     squeeze = a < a_sma * SQUEEZE_MULT
+    # Any squeeze in the prior N bars (bars t-1 .. t-N), shifted so bar t only
+    # reads closed bars. `> 0` makes the rolling warm-up NaN read as no-squeeze.
+    squeeze_recent = squeeze.shift(1).rolling(BO_SQUEEZE_LOOKBACK).max()
     expand = a > a_sma
     signals: list[Signal] = []
 
     for t, row in df.between_time(
         BO_SESSION_START, BO_SESSION_END, inclusive="left"
     ).iterrows():
-        if not squeeze.shift(1).loc[t]:
+        if not squeeze_recent.loc[t] > 0:
             continue
         if expand.loc[t] and row["close"] > hh.loc[t]:
             sl = row["close"] - BO_SL_ATR_MULT * a.loc[t]

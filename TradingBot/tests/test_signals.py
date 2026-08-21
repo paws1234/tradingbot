@@ -21,9 +21,13 @@ import pandas as pd
 import pytest
 
 from app.config import STRATEGY_IDS
-from app.indicators.technical import ema
+from app.indicators.technical import atr, donchian, ema, sma
 from app.models.schemas import Signal
 from app.strategy.signals import (
+    ATR_PERIOD,
+    ATR_SMA_PERIOD,
+    DONCHIAN_N,
+    SQUEEZE_MULT,
     STRATEGY_REGISTRY,
     asia_sweep_signals,
     atr_breakout_signals,
@@ -274,6 +278,74 @@ def test_atr_breakout_squeeze_then_donchian_breakdown_emits_sell() -> None:
     assert sig.reason == "donchian_breakdown_squeeze"
     assert sig.pending_ai_veto is True
     assert_bracketed(sig)
+
+
+def test_atr_breakout_fires_on_squeeze_within_lookback_not_just_predecessor() -> None:
+    """A squeeze anywhere in the prior BO_SQUEEZE_LOOKBACK bars primes the
+    breakout — the bar right before it need not be the squeezed one
+    (strategy.md §4.3 rule 1). Here the squeeze registers at bars 62–65 and
+    bar 66 (t-1) has recovered above the threshold, so the old
+    immediate-predecessor check would have blocked; the rolling lookback lets
+    the 16:45 breakout fire."""
+    n = 90
+    idx = pd.date_range(T0, periods=n, freq="15min", tz="UTC")
+    df = pd.DataFrame({"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0}, index=idx)
+    # Narrow range 07:45–14:45 collapses ATR below its own SMA (squeeze) …
+    df.loc[idx[31]:idx[59], "high"] = 100.01
+    df.loc[idx[31]:idx[59], "low"] = 99.99
+    df.loc[idx[31]:idx[59], "close"] = 100.0
+    # … then the range widens, so the squeeze ends before the breakout bar.
+    # 16:45: volatility expands and price closes through the 20-bar high.
+    df.loc[idx[67], ["open", "high", "low", "close"]] = [100.0, 120.0, 99.9, 105.0]
+
+    # Precondition that makes this a rolling-lookback case rather than the old
+    # immediate-predecessor one: the bar before the breakout (66) is un-squeezed
+    # while an earlier bar within the prior BO_SQUEEZE_LOOKBACK (62) is.
+    a = atr(df["high"], df["low"], df["close"], ATR_PERIOD)
+    squeeze = a < sma(a, ATR_SMA_PERIOD) * SQUEEZE_MULT
+    assert not bool(squeeze.iloc[66])
+    assert bool(squeeze.iloc[62])
+
+    sigs = atr_breakout_signals(df, pd.DataFrame(), "XAU_USD")
+
+    assert len(sigs) == 1
+    sig = sigs[0]
+    assert sig.side == "BUY"
+    assert sig.entry == pytest.approx(105.0)
+    assert sig.reason == "donchian_breakout_squeeze"
+    assert sig.pending_ai_veto is True
+    assert_bracketed(sig)
+    assert sig.timestamp == idx[67]
+
+
+def test_atr_breakout_blocks_when_no_squeeze_in_lookback_window() -> None:
+    """No squeeze in the prior BO_SQUEEZE_LOOKBACK bars blocks the breakout —
+    even when the bar itself expands and closes through the channel
+    (strategy.md §4.3 rule 1). The squeeze ends early (bars 31–40) and the
+    range stays wide through the lookback window, so the 16:45 breakout is
+    correctly skipped."""
+    n = 90
+    idx = pd.date_range(T0, periods=n, freq="15min", tz="UTC")
+    df = pd.DataFrame({"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0}, index=idx)
+    # A brief early squeeze (07:45–10:00) that is long gone by the breakout …
+    df.loc[idx[31]:idx[40], "high"] = 100.01
+    df.loc[idx[31]:idx[40], "low"] = 99.99
+    df.loc[idx[31]:idx[40], "close"] = 100.0
+    # 16:45: volatility expands and price closes through the 20-bar high.
+    df.loc[idx[67], ["open", "high", "low", "close"]] = [100.0, 120.0, 99.9, 105.0]
+
+    # Preconditions: the breakout bar itself qualifies (volatility expands and
+    # close clears the channel) — the squeeze guard is the only thing standing
+    # between this bar and a signal — and none of the prior BO_SQUEEZE_LOOKBACK
+    # bars were squeezed.
+    a = atr(df["high"], df["low"], df["close"], ATR_PERIOD)
+    assert bool((a > sma(a, ATR_SMA_PERIOD)).iloc[67])
+    hh, _ = donchian(df["high"], df["low"], DONCHIAN_N)
+    assert df["close"].iloc[67] > hh.iloc[67]
+    squeeze = a < sma(a, ATR_SMA_PERIOD) * SQUEEZE_MULT
+    assert not squeeze.iloc[62:67].any()
+
+    assert atr_breakout_signals(df, pd.DataFrame(), "XAU_USD") == []
 
 
 # --- mean_reversion --------------------------------------------------------
