@@ -383,7 +383,7 @@ class TradingEngine:
         )
         if order_spec is None:
             return self._outcome(
-                signal, OUTCOME_UNSIZED, "size outside instrument/margin limits"
+                signal, OUTCOME_UNSIZED, "order refused by sizing"
             )
 
         order = await self._oanda.place_market_order(order_spec)
