@@ -245,7 +245,7 @@ class TradingEngine:
     async def _run_instrument(self, instrument: str) -> None:
         """Backfill, then stream ticks into candles and run the pipeline."""
         candles = await self._backfill(instrument)
-        self._history[instrument] = self._frame(candles)
+        self._history[instrument] = self._frame(candles).tail(self._candle_limit)
         builder = CandleBuilder()
         async for tick in self._oanda.stream_prices([instrument]):
             closed = builder.update(tick)
@@ -282,7 +282,13 @@ class TradingEngine:
         frame = self._append_candle(instrument, candle)
         h1 = resample_h1(frame)
         signals = emit_signals(instrument, frame, h1, self._settings.strategies)
-        return [await self._process_signal(signal) for signal in signals]
+        outcomes = []
+        for signal in signals:
+            try:
+                outcomes.append(await self._process_signal(signal))
+            except Exception:  # noqa: BLE001 — isolate per-signal failures
+                logger.exception("signal processing failed for %s %s", signal.instrument, signal.strategy)
+        return outcomes
 
     async def _process_signal(self, signal: Signal) -> dict:
         """One signal through Stage 2 filters → Stage 3 veto → Stage 4 dispatch."""
@@ -299,6 +305,9 @@ class TradingEngine:
             account_state, self._settings.daily_loss_limit_pct
         )
         if halted:
+            logger.info(
+                "signal blocked by circuit-breaker for %s: %s", signal.instrument, reason
+            )
             return self._outcome(signal, OUTCOME_BLOCKED_BREAKER, reason)
 
         context = await self._store.get_daily_context(
@@ -307,6 +316,9 @@ class TradingEngine:
         blackouts = (context or {}).get("blackouts", [])
         blocked, reason = in_blackout(signal.timestamp, blackouts)
         if blocked:
+            logger.info(
+                "signal blocked by blackout for %s: %s", signal.instrument, reason
+            )
             return self._outcome(signal, OUTCOME_BLOCKED_BLACKOUT, reason)
 
         await self._store.insert_signal(signal.model_dump())
