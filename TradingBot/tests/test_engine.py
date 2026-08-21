@@ -37,6 +37,11 @@ from app.core.engine import (
     OUTCOME_DUPLICATE,
     OUTCOME_UNSIZED,
     OUTCOME_VETOED,
+    STATE_EXPIRED,
+    STATE_FILLED,
+    STATE_INVALIDATED,
+    STATE_PENDING,
+    _PendingSetup,
     CandleBuilder,
     TradingEngine,
     active_strategies,
@@ -534,18 +539,39 @@ async def test_signal_outside_blackout_dispatches(
 
 
 @pytest.mark.asyncio
-async def test_duplicate_signal_processed_once(
+async def test_duplicate_blocked_while_setup_pending(
+    make_engine: Callable[..., Harness],
+) -> None:
+    # A vetoed setup stays pending — an identical re-fire is a duplicate.
+    h = make_engine(
+        deepseek=FakeDeepSeek(TradeDecision(execute=False, confidence=5, reason="risky"))
+    )
+
+    first = await h.engine._process_signal(make_signal())
+    second = await h.engine._process_signal(make_signal())
+
+    assert first["outcome"] == OUTCOME_VETOED
+    assert second["outcome"] == OUTCOME_DUPLICATE
+    assert len(h.deepseek.calls) == 1  # the gate ran exactly once
+    assert h.oanda.placed == []
+
+
+@pytest.mark.asyncio
+async def test_dispatch_marks_key_filled_and_frees_for_new_setup(
     make_engine: Callable[..., Harness],
 ) -> None:
     h = make_engine()
 
     first = await h.engine._process_signal(make_signal())
-    second = await h.engine._process_signal(make_signal())
+    key = ("asia_sweep", "XAU_USD", T0.date(), "BUY")
 
     assert first["outcome"] == OUTCOME_DISPATCHED
-    assert second["outcome"] == OUTCOME_DUPLICATE
-    assert len(h.deepseek.calls) == 1
-    assert len(h.store.orders) == 1
+    assert h.engine._pending[key].state == STATE_FILLED
+    # A filled key is freed — the same setup can form again (§6.4).
+    second = await h.engine._process_signal(make_signal())
+    assert second["outcome"] == OUTCOME_DISPATCHED
+    assert len(h.deepseek.calls) == 2
+    assert len(h.store.orders) == 2
 
 
 @pytest.mark.asyncio
@@ -560,6 +586,57 @@ async def test_pending_resets_on_new_day(
     assert day1["outcome"] == OUTCOME_DISPATCHED
     assert day2["outcome"] == OUTCOME_DISPATCHED
     assert len(h.deepseek.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_day_rollover_expires_pending_keys(
+    make_engine: Callable[..., Harness],
+) -> None:
+    h = make_engine(
+        deepseek=FakeDeepSeek(TradeDecision(execute=False, confidence=5, reason="risky"))
+    )
+    await h.engine._process_signal(make_signal(at=T0))  # vetoed → stays pending
+    key = ("asia_sweep", "XAU_USD", T0.date(), "BUY")
+    assert h.engine._pending[key].state == STATE_PENDING
+
+    # A next-day signal rolls the stale key to expired and drops it.
+    next_day = await h.engine._process_signal(make_signal(at=T0 + timedelta(days=1)))
+
+    assert next_day["outcome"] == OUTCOME_VETOED  # a fresh setup, not a duplicate
+    assert key not in h.engine._pending
+    new_key = ("asia_sweep", "XAU_USD", (T0 + timedelta(days=1)).date(), "BUY")
+    assert h.engine._pending[new_key].state == STATE_PENDING
+
+
+@pytest.mark.asyncio
+async def test_invalidated_key_frees_for_refire(
+    make_engine: Callable[..., Harness],
+) -> None:
+    h = make_engine(
+        deepseek=FakeDeepSeek(TradeDecision(execute=False, confidence=5, reason="risky"))
+    )
+    await h.engine._process_signal(make_signal())  # BUY entry=100 stop=90 → pending
+    key = ("asia_sweep", "XAU_USD", T0.date(), "BUY")
+
+    # Price closes through the stop → the asia_sweep predicate invalidates it.
+    h.engine._append_candle(
+        "XAU_USD",
+        Candle(
+            time=T0 + timedelta(minutes=15),
+            open=100.0,
+            high=100.0,
+            low=89.0,
+            close=89.0,
+            volume=5,
+        ),
+    )
+    h.engine._drop_invalidated("XAU_USD")
+    assert h.engine._pending[key].state == STATE_INVALIDATED
+
+    # Freed: the identical signal re-fires as a new setup.
+    refire = await h.engine._process_signal(make_signal())
+    assert refire["outcome"] == OUTCOME_VETOED
+    assert h.engine._pending[key].state == STATE_PENDING
 
 
 @pytest.mark.asyncio
@@ -602,6 +679,41 @@ async def test_process_candle_emits_and_dispatches(
     assert outcomes[0]["outcome"] == OUTCOME_DISPATCHED
     assert len(h.store.signal_log) == 1
     assert h.oanda.placed
+
+
+@pytest.mark.asyncio
+async def test_process_candle_invalidates_then_refires(
+    make_engine: Callable[..., Harness], monkeypatch,
+) -> None:
+    h = make_engine(
+        deepseek=FakeDeepSeek(TradeDecision(execute=False, confidence=5, reason="risky"))
+    )
+    signal = make_signal()  # BUY entry=100 stop=90
+    _patch_single_strategy(monkeypatch, FakeStrategy([signal]))
+    key = ("asia_sweep", "XAU_USD", T0.date(), "BUY")
+
+    outs1 = await h.engine.process_candle(
+        "XAU_USD",
+        Candle(time=T0, open=100.0, high=101.0, low=99.0, close=100.5, volume=10),
+    )
+    assert outs1[0]["outcome"] == OUTCOME_VETOED
+    assert h.engine._pending[key].state == STATE_PENDING
+
+    # The bar closes through the stop → the pending setup is invalidated and
+    # the same signal re-fires as a fresh setup (not a duplicate).
+    outs2 = await h.engine.process_candle(
+        "XAU_USD",
+        Candle(
+            time=T0 + timedelta(minutes=15),
+            open=100.5,
+            high=100.5,
+            low=88.0,
+            close=89.0,
+            volume=5,
+        ),
+    )
+    assert outs2[0]["outcome"] == OUTCOME_VETOED
+    assert h.engine._pending[key].state == STATE_PENDING  # new pending setup
 
 
 @pytest.mark.asyncio
@@ -711,7 +823,9 @@ def test_status_snapshots_runtime_state(
     make_engine: Callable[..., Harness],
 ) -> None:
     h = make_engine()
-    h.engine._pending.add(("asia_sweep", "XAU_USD", T0.date(), "BUY"))
+    h.engine._pending[("asia_sweep", "XAU_USD", T0.date(), "BUY")] = _PendingSetup(
+        state=STATE_PENDING, signal=make_signal()
+    )
 
     snapshot = h.engine.status()
 
@@ -720,6 +834,20 @@ def test_status_snapshots_runtime_state(
     assert snapshot["instruments"] == ["XAU_USD"]
     assert snapshot["strategies"] == ALL_STRATEGIES
     assert snapshot["history_bars"] == {}
+
+
+def test_status_counts_only_pending_setups(
+    make_engine: Callable[..., Harness],
+) -> None:
+    h = make_engine()
+    h.engine._pending[("asia_sweep", "XAU_USD", T0.date(), "BUY")] = _PendingSetup(
+        state=STATE_FILLED, signal=make_signal()
+    )
+
+    snapshot = h.engine.status()
+
+    # A filled key is freed — it is no longer an open pending setup.
+    assert snapshot["pending_signals"] == 0
 
 
 @pytest.mark.asyncio
