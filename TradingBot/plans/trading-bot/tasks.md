@@ -193,12 +193,12 @@
 - [x] Task 22: Fix `finalize_merged.sh` merge detection — grep `#N[^0-9]` misses issue refs at end of a PR-body line [bug]
 - [x] Task 23: Fix `finalize_merged.sh` — `[bug]` tasks can't auto-finalize (`Bug N` rows not mapped to task numbers) [bug]
 
-- [~] Task 24: Update root `strategy.md` + plan docs — record the 10-point strategy review resolutions (lookahead convention, `SQUEEZE_LOOKBACK`, setup lifecycle states, sizing guards)
+- [x] Task 24: Update root `strategy.md` + plan docs — record the 10-point strategy review resolutions (lookahead convention, `SQUEEZE_LOOKBACK`, setup lifecycle states, sizing guards)
   - Acceptance criteria: strategy.md documents the lookahead convention (channels/swings shifted 1 bar; indicators read at bar close) and the direction-safe asia TP formula
   - Acceptance criteria: strategy.md adds `SQUEEZE_LOOKBACK` param and lifecycle + sizing-guard sections
   - Acceptance criteria: test_signals.py locks the direction-safe asia TP formula (TP ≤ Asian low on SELL, ≥ Asian high on BUY)
-  - Scope in: strategy.md + plan.md + tasks.md documentation only
-  - Scope in: direction-safe asia TP assertions in tests/test_signals.py (locks in §2.3 rule 6)
+  - Scope in: strategy.md + plan.md + tasks.md documentation
+  - Scope in: direction-safe asia TP assertions in `TradingBot/tests/test_signals.py` (locks in §2.3 rule 6)
   - Scope out: any code changes beyond the asia TP test assertions
 
 - [ ] Task 25: Implement rolling ATR squeeze lookback in `app/strategy/signals.py` — `BO_SQUEEZE_LOOKBACK=5`, breakout requires any squeeze in the prior N bars

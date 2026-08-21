@@ -136,9 +136,13 @@ def test_asia_sweep_bearish_rejection_emits_sell() -> None:
     assert_bracketed(sig)
     # The stop sits above the swept high (101.5) plus an ATR buffer.
     assert sig.stop_loss > 101.5
-    # Direction-safe asia TP (strategy.md §2.3 rule 6): min() of the range low
-    # and the RR projection — never a target above the Asian low.
+    # Direction-safe asia TP (strategy.md §2.3 rule 6):
+    #   TP = min(L_asia, entry − TP_RR × (SL − entry))
+    # With L_asia=99.5, entry=100.0, SL>101.5 and TP_RR=2.5 the RR projection
+    # is < 100.0 − 2.5×1.5 = 96.25, so TP must be strictly below L_asia.
     assert sig.take_profit <= 99.5
+    rr_projection = sig.entry - 2.5 * (sig.stop_loss - sig.entry)
+    assert sig.take_profit == pytest.approx(min(99.5, rr_projection))
 
 
 def test_asia_sweep_bullish_rejection_emits_buy() -> None:
@@ -157,9 +161,13 @@ def test_asia_sweep_bullish_rejection_emits_buy() -> None:
     assert sig.pending_ai_veto is True
     assert_bracketed(sig)
     assert sig.stop_loss < 98.5
-    # Direction-safe asia TP (strategy.md §2.3 rule 6): max() of the range high
-    # and the RR projection — never a target below the Asian high.
+    # Direction-safe asia TP (strategy.md §2.3 rule 6):
+    #   TP = max(H_asia, entry + TP_RR × (entry − SL))
+    # With H_asia=100.5, entry=100.0, SL<98.5 and TP_RR=2.5 the RR projection
+    # is > 100.0 + 2.5×1.5 = 103.75, so TP must be strictly above H_asia.
     assert sig.take_profit >= 100.5
+    rr_projection = sig.entry + 2.5 * (sig.entry - sig.stop_loss)
+    assert sig.take_profit == pytest.approx(max(100.5, rr_projection))
 
 
 # --- ema_fvg ---------------------------------------------------------------
