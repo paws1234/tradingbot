@@ -177,7 +177,7 @@ def test_adx_downtrend_known_value_and_warmup() -> None:
     # (and therefore -DI) becomes valid at index 13 — the mirror of the
     # uptrend case above.
     close = falling_series()
-    d = adx(close, close + 1.0, close, 14)
+    d = adx(close + 1.0, close, close, 14)
     assert d.iloc[:13].isna().all()
     assert d.iloc[13] == pytest.approx(100.0)
     assert np.allclose(d.iloc[13:], 100.0)
