@@ -472,6 +472,7 @@ async def test_circuit_breaker_blocks_before_gate(
     assert h.deepseek.calls == []  # the gate is never consulted
     assert h.store.signal_log == []  # blocked signals are not recorded
     assert h.oanda.placed == []
+    assert ("asia_sweep", "XAU_USD", T0.date(), "BUY") not in h.engine._pending
 
 
 @pytest.mark.asyncio
@@ -513,6 +514,7 @@ async def test_news_blackout_blocks_signal(
     assert outcome["outcome"] == OUTCOME_BLOCKED_BLACKOUT
     assert h.deepseek.calls == []
     assert h.oanda.placed == []
+    assert ("asia_sweep", "XAU_USD", T0.date(), "BUY") not in h.engine._pending
 
 
 @pytest.mark.asyncio
