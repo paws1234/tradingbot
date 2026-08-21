@@ -26,7 +26,7 @@ COPY app ./app
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD python -c "import os; from urllib.request import urlopen; urlopen('http://127.0.0.1:' + os.getenv('PORT', '8000') + '/health', timeout=5)"
+  CMD python -c "import os; from urllib.request import urlopen; r = urlopen('http://127.0.0.1:' + os.getenv('PORT', '8000') + '/health', timeout=5); r.read(); r.close()"
 
 USER appuser
 
