@@ -7,6 +7,7 @@ to ``null`` rather than 500ing so the endpoint stays up to report a dead
 engine or a downed database.
 """
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 
@@ -62,6 +63,8 @@ async def _mongo_state(
     """Best-effort Mongo read for /status; ``None`` on failure or absence."""
     try:
         document = await call(*args)
+    except asyncio.CancelledError:
+        raise
     except Exception:  # noqa: BLE001 — /status must survive a downed DB
         return None
     if document is None:

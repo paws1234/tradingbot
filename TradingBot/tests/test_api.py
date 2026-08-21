@@ -12,6 +12,7 @@ store — no network, MongoDB, or real clients. Verification points:
 
 from collections.abc import Callable
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.config import Settings
@@ -92,7 +93,7 @@ def make_app(
     store: FakeStore | None = None,
     scheduler: FakeScheduler | None = None,
     engine: FakeEngine | None = None,
-) -> TestClient:
+) -> FastAPI:
     """An app wired with fakes; the lifespan builds nothing real."""
     return create_app(
         make_settings(),
