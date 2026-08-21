@@ -182,7 +182,7 @@
   - Scope out: live / external API tests
   - Scope out: e2e
 
-- [~] Task 21: Add `tests/test_api.py` + `test_deepseek.py` — `/health` 200, DeepSeek parse failure → `execute=false`
+- [x] Task 21: Add `tests/test_api.py` + `test_deepseek.py` — `/health` 200, DeepSeek parse failure → `execute=false`
   - Acceptance criteria: `/health` returns 200 (test)
   - Acceptance criteria: DeepSeek parse failure yields `execute=false` (test)
   - Scope in: `test_api.py` (mocked)
@@ -190,4 +190,4 @@
   - Scope out: live external calls
   - Scope out: endpoints beyond `/health`
 
-- [ ] Task 22: Fix `finalize_merged.sh` merge detection — grep `#N[^0-9]` misses issue refs at end of a PR-body line [bug]
+- [~] Task 22: Fix `finalize_merged.sh` merge detection — grep `#N[^0-9]` misses issue refs at end of a PR-body line [bug]

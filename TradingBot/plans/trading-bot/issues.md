@@ -29,5 +29,5 @@ Host: github | Repo: paws1234/tradingbot | Default branch: main
 | Task 18 | #22 | closed | Add `render.yaml` + README — Render env vars, UptimeRobot `/health` setup |
 | Task 19 | #23 | closed | Add `tests/test_indicators.py` + `test_signals.py` — known series, lookahead safety |
 | Task 20 | #24 | closed | Add `tests/test_filters.py` + `test_sizing.py` — breaker halts at −3%, blackout blocks, sizing hand-calc |
-| Task 21 | #25 | open | Add `tests/test_api.py` + `test_deepseek.py` — `/health` 200, DeepSeek parse failure → `execute=false` |
+| Task 21 | #25 | closed | Add `tests/test_api.py` + `test_deepseek.py` — `/health` 200, DeepSeek parse failure → `execute=false` |
 | Bug 1 | #29 | open | Fix `finalize_merged.sh` merge detection — grep `#N[^0-9]` misses issue refs at end of a PR-body line |
