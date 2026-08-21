@@ -85,6 +85,8 @@ class DailyContextScheduler:
 
     def start(self) -> None:
         """Schedule the daily 00:00 UTC job and start the scheduler."""
+        if self._started:
+            return
         self._scheduler.add_job(
             self.build_daily_context,
             trigger="cron",
