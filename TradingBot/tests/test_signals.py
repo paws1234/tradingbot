@@ -28,11 +28,16 @@ from app.strategy.signals import (
     ATR_SMA_PERIOD,
     DONCHIAN_N,
     SQUEEZE_MULT,
+    STRATEGY_INVALIDATED,
     STRATEGY_REGISTRY,
+    asia_sweep_invalidated,
     asia_sweep_signals,
+    atr_breakout_invalidated,
     atr_breakout_signals,
     dedup_signals,
+    ema_fvg_invalidated,
     ema_fvg_signals,
+    mean_reversion_invalidated,
     mean_reversion_signals,
 )
 
@@ -513,3 +518,77 @@ def test_ema_fvg_trend_join_shifts_the_h1_flag_by_one_bar() -> None:
     assert len(sigs) == 1
     assert sigs[0].side == "BUY"
     assert sigs[0].timestamp == m15.index[target]
+
+
+# --- setup invalidation predicates (§6.4) ------------------------------------
+#
+# Each predicate answers "has this pending setup ceased to exist?" for the
+# engine's lifecycle hook. Tests pin the shared stop-breach rule and the
+# strategy-specific drift/re-entry/band rules, plus the empty-frame and
+# warm-up NaN guards (a setup is never invalidated on incomplete lookbacks).
+
+
+def _buy_signal(
+    entry: float = 100.0, stop: float = 90.0, tp: float = 110.0, atr: float = 1.0
+) -> Signal:
+    return Signal(
+        strategy="asia_sweep",
+        side="BUY",
+        instrument="XAU_USD",
+        entry=entry,
+        stop_loss=stop,
+        take_profit=tp,
+        atr=atr,
+        reason="test",
+        timestamp=T0,
+    )
+
+
+def _frame(closes: list[float], high: list[float] | None = None, low: list[float] | None = None) -> pd.DataFrame:
+    n = len(closes)
+    high = high if high is not None else closes
+    low = low if low is not None else closes
+    return pd.DataFrame(
+        {"open": closes, "high": high, "low": low, "close": closes},
+        index=pd.date_range(T0, periods=n, freq="15min", tz="UTC"),
+    )
+
+
+def test_strategy_invalidated_registry_covers_every_strategy() -> None:
+    assert set(STRATEGY_INVALIDATED) == STRATEGY_IDS
+    assert set(STRATEGY_INVALIDATED) == set(STRATEGY_REGISTRY)
+
+
+def test_asia_sweep_invalidated_on_stop_breach() -> None:
+    assert not asia_sweep_invalidated(_frame([100.0]), _buy_signal())  # above stop
+    assert asia_sweep_invalidated(_frame([89.0]), _buy_signal())       # stop breached
+    assert not asia_sweep_invalidated(_frame([]), _buy_signal())       # empty frame
+
+
+def test_ema_fvg_invalidated_after_one_atr_drift() -> None:
+    assert not ema_fvg_invalidated(_frame([100.0]), _buy_signal())  # at entry
+    assert not ema_fvg_invalidated(_frame([99.5]), _buy_signal())   # drift, not dead
+    assert ema_fvg_invalidated(_frame([98.9]), _buy_signal())       # < entry − ATR
+
+
+def test_atr_breakout_invalidated_on_stop_or_channel_reentry() -> None:
+    flat = _frame([104.5] * 25, high=[105.0] * 25, low=[104.0] * 25)
+    # Close back inside the Donchian channel (prior-20 high ≈ 105) → invalidated.
+    inside = flat.copy()
+    inside.iloc[-1, inside.columns.get_loc("close")] = 104.0
+    assert atr_breakout_invalidated(inside, _buy_signal())
+    # Close beyond the channel high → the breakout still holds.
+    beyond = flat.copy()
+    beyond.iloc[-1, beyond.columns.get_loc("close")] = 106.0
+    assert not atr_breakout_invalidated(beyond, _buy_signal())
+    # A stop breach invalidates regardless of the channel.
+    stopped = flat.copy()
+    stopped.iloc[-1, stopped.columns.get_loc("close")] = 89.0
+    assert atr_breakout_invalidated(stopped, _buy_signal())
+
+
+def test_mean_reversion_invalidated_on_band_undercut() -> None:
+    flat = _frame([100.0] * 30)
+    assert not mean_reversion_invalidated(flat, _buy_signal())  # sits at the band
+    crash = _frame([100.0] * 29 + [80.0])
+    assert mean_reversion_invalidated(crash, _buy_signal())  # undercuts the band

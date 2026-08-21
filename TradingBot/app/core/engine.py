@@ -32,10 +32,14 @@ The `signals` collection records every signal that passes the Stage 2 filters
 and reaches the veto gate (the natural join partner for the `trade_logs`
 decisions); filter-blocked signals are logged, not stored.
 
-One signal per setup per day: the engine keeps a pending set of
-``dedup_key(signal)`` — (strategy, instrument, day, side) — and never
-re-evaluates a key already seen that UTC day (strategy.md §6.2). The set rolls
-over at day change.
+Setups move through an explicit lifecycle (strategy.md §6.4): a
+``dedup_key(signal)`` — (strategy, instrument, day, side) — enters the engine's
+state map ``_pending`` as ``pending`` on its first signal, is marked ``filled``
+on a successful dispatch, ``invalidated`` when the strategy's
+``is_invalidated(df, signal)`` predicate says the setup no longer exists, and
+``expired`` at UTC day rollover. A ``filled``/``invalidated``/``expired`` key
+is freed — a fresh setup may form on the same key; only a ``pending`` key
+blocks a re-fire.
 
 The Stage 1 Finnhub feed is kept alive by ``_run_news``; nothing in the plan
 consumes headlines in v1, so relevance gating (Task 10) wires in when a
@@ -48,6 +52,7 @@ clients), matching the pattern in ``app/core/scheduler.py``.
 import asyncio
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date, datetime
 
 import httpx
@@ -62,7 +67,12 @@ from app.data.oanda import OandaClient
 from app.indicators.technical import resample_h1
 from app.models.schemas import Candle, PriceTick, Signal
 from app.strategy.filters import circuit_breaker, in_blackout
-from app.strategy.signals import STRATEGY_REGISTRY, dedup_key, dedup_signals
+from app.strategy.signals import (
+    STRATEGY_INVALIDATED,
+    STRATEGY_REGISTRY,
+    dedup_key,
+    dedup_signals,
+)
 from app.strategy.sizing import build_market_order
 
 logger = logging.getLogger(__name__)
@@ -86,6 +96,25 @@ OUTCOME_BLOCKED_BREAKER = "blocked_breaker"
 OUTCOME_BLOCKED_BLACKOUT = "blocked_blackout"
 OUTCOME_DUPLICATE = "duplicate"
 OUTCOME_UNSIZED = "unsized"
+
+# Setup lifecycle states (strategy.md §6.4). Only STATE_PENDING blocks a
+# re-fire; filled/invalidated/expired keys are freed for a fresh setup.
+STATE_PENDING = "pending"
+STATE_FILLED = "filled"
+STATE_INVALIDATED = "invalidated"
+STATE_EXPIRED = "expired"
+
+
+@dataclass
+class _PendingSetup:
+    """One (strategy, instrument, day, side) key's lifecycle state (§6.4).
+
+    The signal is kept so the engine can run the strategy's
+    ``is_invalidated(df, signal)`` predicate against fresh closed bars.
+    """
+
+    state: str
+    signal: Signal
 
 
 class CandleBuilder:
@@ -200,7 +229,7 @@ class TradingEngine:
         self._scheduler = scheduler
         self._candle_limit = candle_limit
         self._history: dict[str, pd.DataFrame] = {}
-        self._pending: set[tuple[str, str, date, str]] = set()
+        self._pending: dict[tuple[str, str, date, str], _PendingSetup] = {}
         self._tasks: list[asyncio.Task[None]] = []
         self._started = False
 
@@ -235,7 +264,9 @@ class TradingEngine:
             "started": self._started,
             "instruments": list(self._settings.instruments),
             "strategies": list(self._settings.strategies),
-            "pending_signals": len(self._pending),
+            "pending_signals": sum(
+                1 for setup in self._pending.values() if setup.state == STATE_PENDING
+            ),
             "history_bars": {
                 instrument: len(frame)
                 for instrument, frame in self._history.items()
@@ -280,6 +311,8 @@ class TradingEngine:
         Returns one outcome dict per signal, in emission order.
         """
         frame = self._append_candle(instrument, candle)
+        self._roll_over(frame.index[-1].date())
+        self._drop_invalidated(instrument)
         h1 = resample_h1(frame)
         signals = emit_signals(instrument, frame, h1, self._settings.strategies)
         outcomes = []
@@ -293,10 +326,11 @@ class TradingEngine:
     async def _process_signal(self, signal: Signal) -> dict:
         """One signal through Stage 2 filters → Stage 3 veto → Stage 4 dispatch."""
         key = dedup_key(signal)
-        self._drop_stale_pending(signal.timestamp.date())
-        if key in self._pending:
+        self._roll_over(signal.timestamp.date())
+        setup = self._pending.get(key)
+        if setup is not None and setup.state == STATE_PENDING:
             return self._outcome(signal, OUTCOME_DUPLICATE, "already processed today")
-        self._pending.add(key)
+        self._pending[key] = setup = _PendingSetup(state=STATE_PENDING, signal=signal)
 
         account_state = await self._store.get_account_state(
             self._settings.oanda_account_id
@@ -305,9 +339,11 @@ class TradingEngine:
             account_state, self._settings.daily_loss_limit_pct
         )
         if halted:
+            self._pending.pop(key, None)
             logger.info(
                 "signal blocked by circuit-breaker for %s: %s", signal.instrument, reason
             )
+            self._pending.pop(key, None)
             return self._outcome(signal, OUTCOME_BLOCKED_BREAKER, reason)
 
         context = await self._store.get_daily_context(
@@ -316,9 +352,11 @@ class TradingEngine:
         blackouts = (context or {}).get("blackouts", [])
         blocked, reason = in_blackout(signal.timestamp, blackouts)
         if blocked:
+            self._pending.pop(key, None)
             logger.info(
                 "signal blocked by blackout for %s: %s", signal.instrument, reason
             )
+            self._pending.pop(key, None)
             return self._outcome(signal, OUTCOME_BLOCKED_BLACKOUT, reason)
 
         await self._store.insert_signal(signal.model_dump())
@@ -340,6 +378,7 @@ class TradingEngine:
 
         order = await self._oanda.place_market_order(order_spec)
         await self._store.log_order(order, signal, decision)
+        setup.state = STATE_FILLED  # frees the key for a new setup (§6.4)
         return self._outcome(signal, OUTCOME_DISPATCHED, decision.reason)
 
     def _append_candle(self, instrument: str, candle: Candle) -> pd.DataFrame:
@@ -357,10 +396,46 @@ class TradingEngine:
         self._history[instrument] = frame
         return frame
 
-    def _drop_stale_pending(self, day: date) -> None:
-        """Forget pending keys from earlier UTC days (strategy.md §6.2 rollover)."""
-        if any(key[2] != day for key in self._pending):
-            self._pending = {key for key in self._pending if key[2] == day}
+    def _roll_over(self, day: date) -> None:
+        """Drop keys from earlier UTC days; still-pending ones expire first.
+
+        strategy.md §6.4 — at day rollover every pending key becomes
+        ``expired`` and is dropped, so the next UTC day starts clean. Keys
+        already ``filled``/``invalidated`` are dropped without ceremony.
+        """
+        stale = [key for key in self._pending if key[2] != day]
+        for key in stale:
+            setup = self._pending.pop(key)
+            if setup.state == STATE_PENDING:
+                setup.state = STATE_EXPIRED
+                logger.info("setup %s expired (day rollover)", key)
+
+    def _drop_invalidated(self, instrument: str) -> None:
+        """Free pending setups whose per-strategy predicate says they're gone.
+
+        Runs on every closed candle so a dead setup frees its key and a fresh
+        one may form (strategy.md §6.4). A strategy without a predicate in
+        ``STRATEGY_INVALIDATED`` never invalidates and stays pending.
+        """
+        frame = self._history.get(instrument)
+        if frame is None or frame.empty:
+            return
+        today = frame.index[-1].date()
+        for key, setup in list(self._pending.items()):
+            signal = setup.signal
+            # Only same-day setups are live; stale keys belong to _roll_over.
+            if (
+                signal.instrument != instrument
+                or setup.state != STATE_PENDING
+                or signal.timestamp.date() != today
+            ):
+                continue
+            predicate = STRATEGY_INVALIDATED.get(signal.strategy)
+            if predicate is not None and predicate(frame, signal):
+                setup.state = STATE_INVALIDATED
+                logger.info(
+                    "setup %s invalidated (%s, %s)", key, signal.strategy, signal.reason
+                )
 
     @staticmethod
     def _frame(candles: Sequence[Candle]) -> pd.DataFrame:

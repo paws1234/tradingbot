@@ -386,3 +386,75 @@ def dedup_signals(signals: list[Signal]) -> list[Signal]:
         seen.add(key)
         unique.append(signal)
     return unique
+
+
+# --- Setup invalidation predicates (strategy.md §6.4) ------------------------
+#
+# Each strategy exposes an ``is_invalidated(df, signal)`` predicate answering
+# "has this pending setup ceased to exist?" The engine calls it with the
+# instrument's full history frame and the signal that created the pending key;
+# when it returns True the key is freed as ``invalidated`` so a fresh setup may
+# form on the same (strategy, instrument, day, side). Predicates read only the
+# latest closed bar, and warm-up NaNs compare False (a setup is never
+# invalidated on incomplete lookbacks).
+
+
+def _stopped_out(df: pd.DataFrame, signal: Signal) -> bool:
+    """The latest close has breached the setup's stop — the trade is dead."""
+    if df.empty:
+        return False
+    last = df["close"].iloc[-1]
+    if signal.side == "BUY":
+        return last <= signal.stop_loss
+    return last >= signal.stop_loss
+
+
+def asia_sweep_invalidated(df: pd.DataFrame, signal: Signal) -> bool:
+    """Asia sweep: the reversal failed — price closed back through the stop."""
+    return _stopped_out(df, signal)
+
+
+def ema_fvg_invalidated(df: pd.DataFrame, signal: Signal) -> bool:
+    """EMA/FVG: the pullback premise broke — price ran ≥1 ATR against entry."""
+    if df.empty:
+        return False
+    last = df["close"].iloc[-1]
+    if signal.side == "BUY":
+        return last < signal.entry - signal.atr
+    return last > signal.entry + signal.atr
+
+
+def atr_breakout_invalidated(df: pd.DataFrame, signal: Signal) -> bool:
+    """ATR breakout: stopped out, or price closed back inside the channel."""
+    if _stopped_out(df, signal):
+        return True
+    if df.empty:
+        return False
+    hh, ll = donchian(df["high"], df["low"], DONCHIAN_N)
+    last = df["close"].iloc[-1]
+    if signal.side == "BUY":
+        return last < hh.iloc[-1]
+    return last > ll.iloc[-1]
+
+
+def mean_reversion_invalidated(df: pd.DataFrame, signal: Signal) -> bool:
+    """Mean reversion: the fade failed — price closed back beyond the band."""
+    if df.empty:
+        return False
+    _, upper, lower = bollinger(df["close"], BB_PERIOD, BB_MULT)
+    last = df["close"].iloc[-1]
+    if signal.side == "BUY":
+        return last < lower.iloc[-1]
+    return last > upper.iloc[-1]
+
+
+STRATEGY_INVALIDATED: dict[str, Callable[[pd.DataFrame, Signal], bool]] = {
+    "asia_sweep": asia_sweep_invalidated,
+    "ema_fvg": ema_fvg_invalidated,
+    "atr_breakout": atr_breakout_invalidated,
+    "mean_reversion": mean_reversion_invalidated,
+}
+
+# Lockstep with STRATEGY_REGISTRY: every strategy ID exposes a predicate so the
+# engine's §6.4 invalidation hook can look it up by name.
+assert set(STRATEGY_INVALIDATED) == STRATEGY_IDS
