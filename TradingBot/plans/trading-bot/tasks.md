@@ -165,7 +165,7 @@
 
 ## Phase 6 — Tests & verification
 
-- [~] Task 19: Add `tests/test_indicators.py` + `test_signals.py` — known series, lookahead safety
+- [x] Task 19: Add `tests/test_indicators.py` + `test_signals.py` — known series, lookahead safety
   - Acceptance criteria: indicator tests assert known hand-computed series
   - Acceptance criteria: signal tests verify no lookahead (shift(1))
   - Scope in: `test_indicators.py`
@@ -173,7 +173,7 @@
   - Scope out: integration / e2e
   - Scope out: live external API calls
 
-- [ ] Task 20: Add `tests/test_filters.py` + `test_sizing.py` — breaker halts at −3%, blackout blocks, sizing hand-calc
+- [x] Task 20: Add `tests/test_filters.py` + `test_sizing.py` — breaker halts at −3%, blackout blocks, sizing hand-calc
   - Acceptance criteria: breaker test halts at day loss ≤ −3%
   - Acceptance criteria: blackout test blocks entries
   - Acceptance criteria: sizing hand-calc matches formula
@@ -182,10 +182,12 @@
   - Scope out: live / external API tests
   - Scope out: e2e
 
-- [ ] Task 21: Add `tests/test_api.py` + `test_deepseek.py` — `/health` 200, DeepSeek parse failure → `execute=false`
+- [~] Task 21: Add `tests/test_api.py` + `test_deepseek.py` — `/health` 200, DeepSeek parse failure → `execute=false`
   - Acceptance criteria: `/health` returns 200 (test)
   - Acceptance criteria: DeepSeek parse failure yields `execute=false` (test)
   - Scope in: `test_api.py` (mocked)
   - Scope in: `test_deepseek.py` (mocked)
   - Scope out: live external calls
   - Scope out: endpoints beyond `/health`
+
+- [ ] Task 22: Fix `finalize_merged.sh` merge detection — grep `#N[^0-9]` misses issue refs at end of a PR-body line [bug]
