@@ -1,6 +1,6 @@
 # Issue mapping — trading-bot
 
-Host: github | Repo: paws1234/tradingbot | Default branch: main
+Host: GitHub | Repo: paws1234/tradingbot | Default branch: main
 
 > This mapping is created at `/plan` time (one issue per task) and updated by
 > `/implement`, `/review`, `/test`, and `/amend` (see CLAUDE.md §Git Host
