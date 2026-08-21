@@ -79,6 +79,7 @@ class FakeScheduler:
         self.jobs: list[dict[str, Any]] = []
         self.started = False
         self.running = False
+        self.start_calls = 0
         self.shutdown_calls = 0
 
     def add_job(self, func, trigger=None, **kwargs) -> str:
@@ -86,6 +87,7 @@ class FakeScheduler:
         return "daily_context"
 
     def start(self) -> None:
+        self.start_calls += 1
         self.started = True
         self.running = True
 
@@ -249,6 +251,22 @@ def test_start_schedules_daily_0000_utc_cron(
     # window instead of silently skipping the day's reset.
     assert job["coalesce"] is True
     assert job["misfire_grace_time"] == 3600
+
+
+def test_start_is_idempotent(
+    store: FakeStore,
+    calendar: FakeCalendar,
+    oanda: FakeOanda,
+    make_settings: Callable[..., Settings],
+) -> None:
+    fake = FakeScheduler()
+    scheduler = DailyContextScheduler(
+        store, calendar, oanda, make_settings(), scheduler=fake
+    )
+    scheduler.start()
+    scheduler.start()
+    assert fake.start_calls == 1
+    assert len(fake.jobs) == 1
 
 
 def test_stop_is_noop_before_start(
