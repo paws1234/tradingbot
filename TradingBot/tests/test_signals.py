@@ -136,6 +136,9 @@ def test_asia_sweep_bearish_rejection_emits_sell() -> None:
     assert_bracketed(sig)
     # The stop sits above the swept high (101.5) plus an ATR buffer.
     assert sig.stop_loss > 101.5
+    # Direction-safe asia TP (strategy.md §2.3 rule 6): min() of the range low
+    # and the RR projection — never a target above the Asian low.
+    assert sig.take_profit <= 99.5
 
 
 def test_asia_sweep_bullish_rejection_emits_buy() -> None:
@@ -154,6 +157,9 @@ def test_asia_sweep_bullish_rejection_emits_buy() -> None:
     assert sig.pending_ai_veto is True
     assert_bracketed(sig)
     assert sig.stop_loss < 98.5
+    # Direction-safe asia TP (strategy.md §2.3 rule 6): max() of the range high
+    # and the RR projection — never a target below the Asian high.
+    assert sig.take_profit >= 100.5
 
 
 # --- ema_fvg ---------------------------------------------------------------
