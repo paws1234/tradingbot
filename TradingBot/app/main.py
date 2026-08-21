@@ -67,8 +67,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     if scheduler is not None:
         scheduler.start()
-    await engine.start()
     try:
+        await engine.start()
         yield
     finally:
         await engine.stop()
