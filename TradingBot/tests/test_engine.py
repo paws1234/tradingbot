@@ -107,6 +107,9 @@ class FakeStore:
     async def get_account_state(self, account_id: str) -> dict | None:
         return self.account_state
 
+    async def upsert_account_state(self, account_id: str, document: dict) -> None:
+        self.account_state = document
+
     async def get_daily_context(self, day: str) -> dict | None:
         return self.daily_context
 
@@ -138,6 +141,8 @@ class FakeOanda:
         self.ticks = ticks or []
         self.candles = candles or []
         self.summary = summary or {"balance": "10000.0000"}
+        self.summary_calls = 0
+        self.summary_error: Exception | None = None
         self.candle_requests: list[tuple[str, str | None, int]] = []
         self.placed: list[dict] = []
         self.backfill_error: Exception | None = None
@@ -155,6 +160,9 @@ class FakeOanda:
             yield price_tick
 
     async def get_account_summary(self) -> dict:
+        self.summary_calls += 1
+        if self.summary_error is not None:
+            raise self.summary_error
         return self.summary
 
     async def place_market_order(self, order_spec: dict) -> OrderResult:
@@ -401,6 +409,7 @@ async def test_process_signal_dispatches_approved_signal(
 
     assert outcome["outcome"] == OUTCOME_DISPATCHED
     assert h.oanda.placed and h.oanda.placed[0]["order"]["units"] == "10"  # 10000*1% / 10
+    assert h.oanda.summary_calls == 1  # fetched once, reused for sizing
     assert len(h.deepseek.calls) == 1
     assert len(h.store.signal_log) == 1
     assert len(h.store.decisions) == 1
@@ -459,22 +468,77 @@ async def test_process_signal_confidence_boundary_is_inclusive(
 async def test_circuit_breaker_blocks_before_gate(
     make_engine: Callable[..., Harness],
 ) -> None:
-    h = make_engine()
+    # Live balance down 500 from the day-start baseline → −5% realized loss
+    # (≥ the −3% limit): the breaker halts before the gate is consulted.
+    h = make_engine(oanda=FakeOanda(summary={"balance": "9500.0000"}))
     h.store.account_state = {
         "account_id": "a",
         "day_start_balance": 10000.0,
-        "realized_pnl": -500.0,
     }
 
     outcome = await h.engine._process_signal(make_signal())
     key = ("asia_sweep", "XAU_USD", T0.date(), "BUY")
 
     assert outcome["outcome"] == OUTCOME_BLOCKED_BREAKER
+    # realized day P&L is derived from the fresh balance and persisted.
+    assert h.store.account_state["realized_pnl"] == pytest.approx(-500.0)
+    assert h.oanda.summary_calls == 1
     assert key not in h.engine._pending
     assert h.deepseek.calls == []  # the gate is never consulted
     assert h.store.signal_log == []  # blocked signals are not recorded
     assert h.oanda.placed == []
     assert ("asia_sweep", "XAU_USD", T0.date(), "BUY") not in h.engine._pending
+
+
+@pytest.mark.asyncio
+async def test_breaker_open_and_zero_pnl_without_baseline(
+    make_engine: Callable[..., Harness],
+) -> None:
+    # No day-start baseline → no loss can be measured → breaker open, and the
+    # derived realized_pnl (0.0) is still persisted for the breaker/status.
+    h = make_engine()
+
+    outcome = await h.engine._process_signal(make_signal())
+
+    assert outcome["outcome"] == OUTCOME_DISPATCHED
+    assert h.store.account_state["realized_pnl"] == pytest.approx(0.0)
+    assert h.store.account_state["day_start_balance"] is None
+
+
+@pytest.mark.asyncio
+async def test_summary_failure_degrades_to_stored_breaker_state(
+    make_engine: Callable[..., Harness],
+) -> None:
+    # A summary fetch failure must not disable the breaker — it falls back to
+    # the last persisted realized P&L.
+    h = make_engine()
+    h.oanda.summary_error = httpx.ConnectError("network down")
+    h.store.account_state = {
+        "account_id": "a",
+        "day_start_balance": 10000.0,
+        "realized_pnl": -800.0,
+    }
+
+    outcome = await h.engine._process_signal(make_signal())
+
+    assert outcome["outcome"] == OUTCOME_BLOCKED_BREAKER  # −8% ≤ −3% still halts
+    assert h.deepseek.calls == []
+    assert h.oanda.placed == []
+
+
+@pytest.mark.asyncio
+async def test_summary_failure_refuses_dispatch(
+    make_engine: Callable[..., Harness],
+) -> None:
+    # Summary unavailable and no stored loss: the breaker is open and the veto
+    # passes, but dispatch refuses rather than size on a stale balance.
+    h = make_engine()
+    h.oanda.summary_error = httpx.ConnectError("network down")
+
+    outcome = await h.engine._process_signal(make_signal())
+
+    assert outcome["outcome"] == OUTCOME_UNSIZED
+    assert h.oanda.placed == []
 
 
 @pytest.mark.asyncio

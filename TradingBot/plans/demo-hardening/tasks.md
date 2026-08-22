@@ -1,6 +1,6 @@
 ## Phase 0 — Safety fixes
 
-- [ ] Task 1: Wire realized day P&L into the circuit breaker in `app/core/engine.py` — derive `realized_pnl = balance − day_start_balance` from a fresh OANDA summary before each signal check and persist it to `account_state`, so the −3% day-loss guard can halt
+- [~] Task 1: Wire realized day P&L into the circuit breaker in `app/core/engine.py` — derive `realized_pnl = balance − day_start_balance` from a fresh OANDA summary before each signal check and persist it to `account_state`, so the −3% day-loss guard can halt
   - Acceptance criteria: `_process_signal` fetches the OANDA account summary once before the breaker check, writes `realized_pnl` to `account_state`, and reuses the same summary for sizing at dispatch
   - Acceptance criteria: with a day-start baseline and a realized loss ≥ the limit, the breaker halts and the signal is blocked (engine test)
   - Acceptance criteria: breaker stays open when no day-start baseline exists
