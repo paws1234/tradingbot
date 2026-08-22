@@ -474,7 +474,11 @@ class TradingEngine:
         model output) with a ``fail_safe:`` reason. Such a verdict is
         non-terminal — the setup gets a fresh veto on the next closed candle.
         """
-        return decision.reason.startswith(FAIL_SAFE_PREFIX)
+        return (
+            (not decision.execute)
+            and decision.confidence == 0
+            and decision.reason.startswith(FAIL_SAFE_PREFIX)
+        )
 
     def _append_candle(self, instrument: str, candle: Candle) -> pd.DataFrame:
         """Append a closed candle to the instrument's history; cap the frame."""
