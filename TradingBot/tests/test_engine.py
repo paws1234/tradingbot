@@ -35,6 +35,7 @@ from app.core.engine import (
     OUTCOME_BLOCKED_BREAKER,
     OUTCOME_DISPATCHED,
     OUTCOME_DUPLICATE,
+    OUTCOME_FAILSAFE,
     OUTCOME_UNSIZED,
     OUTCOME_VETOED,
     STATE_EXPIRED,
@@ -624,6 +625,47 @@ async def test_duplicate_blocked_while_setup_pending(
     assert second["outcome"] == OUTCOME_DUPLICATE
     assert len(h.deepseek.calls) == 1  # the gate ran exactly once
     assert h.oanda.placed == []
+
+
+@pytest.mark.asyncio
+async def test_fail_safe_frees_key_and_next_candle_refires(
+    make_engine: Callable[..., Harness], monkeypatch,
+) -> None:
+    # A fail-safe verdict is non-terminal: the key is freed so the same setup
+    # re-emits on the next closed candle (a fresh veto, not a duplicate) once
+    # the gate recovers.
+    h = make_engine(
+        deepseek=FakeDeepSeek(
+            TradeDecision(execute=False, confidence=0, reason="fail_safe: veto API error")
+        )
+    )
+    signal = make_signal()
+    _patch_single_strategy(monkeypatch, FakeStrategy([signal]))
+    key = ("asia_sweep", "XAU_USD", T0.date(), "BUY")
+
+    outs1 = await h.engine.process_candle(
+        "XAU_USD",
+        Candle(time=T0, open=100.0, high=101.0, low=99.0, close=100.5, volume=10),
+    )
+
+    assert outs1[0]["outcome"] == OUTCOME_FAILSAFE
+    assert key not in h.engine._pending  # freed for a re-fire
+    assert h.oanda.placed == []
+
+    # The next closed candle re-emits the same setup as a fresh evaluation.
+    outs2 = await h.engine.process_candle(
+        "XAU_USD",
+        Candle(
+            time=T0 + timedelta(minutes=15),
+            open=100.5,
+            high=101.0,
+            low=100.0,
+            close=100.2,
+            volume=8,
+        ),
+    )
+    assert outs2[0]["outcome"] == OUTCOME_FAILSAFE
+    assert len(h.deepseek.calls) == 2  # the gate was consulted again
 
 
 @pytest.mark.asyncio
