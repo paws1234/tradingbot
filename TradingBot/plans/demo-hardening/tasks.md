@@ -14,7 +14,7 @@
   - Scope in: engine veto branch + outcome constant + tests
   - Scope out: DeepSeek prompt changes or fail-safe defaults
 
-- [~] Task 3: Remove the redundant double `_pending.pop(key, None)` in `app/core/engine.py` filter branches — each blocked branch pops the key exactly once, no behavior change
+- [x] Task 3: Remove the redundant double `_pending.pop(key, None)` in `app/core/engine.py` filter branches — each blocked branch pops the key exactly once, no behavior change
   - Acceptance criteria: each filter-blocked branch pops the key once
   - Acceptance criteria: existing engine tests pass unchanged
   - Scope in: engine cleanup only
