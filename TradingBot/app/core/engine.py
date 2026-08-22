@@ -18,7 +18,11 @@ Task 15 wires the pipeline end to end (Plan.md Stages 1–4):
 4. **Filters** — the circuit breaker
    (:func:`app.strategy.filters.circuit_breaker`) and news blackout
    (:func:`app.strategy.filters.in_blackout`) run per signal, in Stage 2
-   order, before the gate. A blocked signal is logged and dropped.
+   order, before the gate. A blocked signal is logged and dropped. The
+   breaker is fed a fresh OANDA account summary on every signal —
+   ``realized_pnl = balance − day_start_balance`` is persisted to
+   ``account_state`` before the check, and that same summary sizes the
+   order at dispatch (demo-hardening Task 1).
 5. **DeepSeek veto** — every surviving signal goes through
    :class:`~app.data.deepseek.DeepSeekClient.evaluate`; the verdict is
    audit-logged via :meth:`MongoStore.log_decision` regardless of outcome.
@@ -66,7 +70,7 @@ from app.data.mongo import MongoStore
 from app.data.oanda import OandaClient
 from app.indicators.technical import resample_h1
 from app.models.schemas import Candle, PriceTick, Signal
-from app.strategy.filters import circuit_breaker, in_blackout
+from app.strategy.filters import CIRCUIT_BREAKER_DAY_LOSS, circuit_breaker, in_blackout
 from app.strategy.signals import (
     STRATEGY_INVALIDATED,
     STRATEGY_REGISTRY,
@@ -332,18 +336,29 @@ class TradingEngine:
             return self._outcome(signal, OUTCOME_DUPLICATE, "already processed today")
         self._pending[key] = setup = _PendingSetup(state=STATE_PENDING, signal=signal)
 
+        # One fresh OANDA summary feeds the breaker and dispatch (Task 1):
+        # the −3% day-loss guard needs realized_pnl = balance − day_start_balance,
+        # and sizing reuses the same snapshot so the two never disagree.
+        summary = await self._fetch_account_summary()
+
         account_state = await self._store.get_account_state(
             self._settings.oanda_account_id
         )
+        if summary is not None:
+            account_state = await self._refresh_realized_pnl(account_state, summary)
         halted, reason = circuit_breaker(
             account_state, self._settings.daily_loss_limit_pct
         )
         if halted:
             self._pending.pop(key, None)
+            if reason == CIRCUIT_BREAKER_DAY_LOSS:
+                account_state = {**account_state, "trading_halted": True}
+                await self._store.upsert_account_state(
+                    self._settings.oanda_account_id, account_state
+                )
             logger.info(
                 "signal blocked by circuit-breaker for %s: %s", signal.instrument, reason
             )
-            self._pending.pop(key, None)
             return self._outcome(signal, OUTCOME_BLOCKED_BREAKER, reason)
 
         context = await self._store.get_daily_context(
@@ -368,7 +383,8 @@ class TradingEngine:
         ):
             return self._outcome(signal, OUTCOME_VETOED, decision.reason)
 
-        summary = await self._oanda.get_account_summary()
+        if summary is None:
+            return self._outcome(signal, OUTCOME_UNSIZED, "account summary unavailable")
         balance = float(summary["balance"])
         margin_available = (
             float(summary["marginAvailable"])
@@ -390,6 +406,51 @@ class TradingEngine:
         await self._store.log_order(order, signal, decision)
         setup.state = STATE_FILLED  # frees the key for a new setup (§6.4)
         return self._outcome(signal, OUTCOME_DISPATCHED, decision.reason)
+
+    async def _fetch_account_summary(self) -> dict | None:
+        """Fresh OANDA account summary for the breaker feed and sizing.
+
+        None on failure (network error, missing/malformed balance) so the
+        breaker falls back to the last persisted realized P&L and dispatch
+        refuses to size on a stale balance.
+        """
+        try:
+            summary = await self._oanda.get_account_summary()
+            float(summary["balance"])  # the field the breaker math reads
+        except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+            logger.error("account summary unavailable (%s); breaker feed skipped", exc)
+            return None
+        return summary
+
+    async def _refresh_realized_pnl(
+        self, account_state: dict | None, summary: dict
+    ) -> dict:
+        """Derive realized day P&L from a fresh balance and persist it.
+
+        OANDA ``balance`` excludes unrealized P&L, so
+        ``balance − day_start_balance`` is the day's realized P&L for the
+        circuit breaker (Task 1). Without a day-start baseline no loss can be
+        measured — the doc carries the prior realized_pnl (0.0 if none) and
+        the breaker stays open (app/strategy/filters.py).
+        """
+        base = account_state or {}
+        day_start = base.get("day_start_balance")
+        balance = float(summary["balance"])
+        realized = (
+            balance - day_start
+            if day_start is not None and day_start > 0
+            else base.get("realized_pnl", 0.0)
+        )
+        document = {
+            "account_id": self._settings.oanda_account_id,
+            "day_start_balance": day_start,
+            "realized_pnl": realized,
+            "trading_halted": bool(base.get("trading_halted")),
+        }
+        await self._store.upsert_account_state(
+            self._settings.oanda_account_id, document
+        )
+        return document
 
     def _append_candle(self, instrument: str, candle: Candle) -> pd.DataFrame:
         """Append a closed candle to the instrument's history; cap the frame."""
