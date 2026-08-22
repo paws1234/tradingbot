@@ -42,3 +42,5 @@
   - Acceptance criteria: README documents the practice-account demo run end to end
   - Scope in: `docker-compose.yml` + README demo section
   - Scope out: live-account docs, render.yaml changes, deployment
+
+- [ ] Task 7: Persist `trading_halted=True` when the circuit breaker halts in `app/core/engine.py` — the flag is only ever written False (scheduler reset), so an intraday balance recovery re-opens the breaker, violating the "halts for the rest of the day" contract [bug]
