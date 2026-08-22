@@ -70,7 +70,7 @@ from app.data.mongo import MongoStore
 from app.data.oanda import OandaClient
 from app.indicators.technical import resample_h1
 from app.models.schemas import Candle, PriceTick, Signal
-from app.strategy.filters import circuit_breaker, in_blackout
+from app.strategy.filters import CIRCUIT_BREAKER_DAY_LOSS, circuit_breaker, in_blackout
 from app.strategy.signals import (
     STRATEGY_INVALIDATED,
     STRATEGY_REGISTRY,
@@ -351,10 +351,14 @@ class TradingEngine:
         )
         if halted:
             self._pending.pop(key, None)
+            if reason == CIRCUIT_BREAKER_DAY_LOSS:
+                account_state = {**account_state, "trading_halted": True}
+                await self._store.upsert_account_state(
+                    self._settings.oanda_account_id, account_state
+                )
             logger.info(
                 "signal blocked by circuit-breaker for %s: %s", signal.instrument, reason
             )
-            self._pending.pop(key, None)
             return self._outcome(signal, OUTCOME_BLOCKED_BREAKER, reason)
 
         context = await self._store.get_daily_context(
