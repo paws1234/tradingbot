@@ -9,7 +9,7 @@ Host: GitHub | Repo: paws1234/tradingbot | Default branch: main
 
 | Task | Issue | Status | Title |
 |------|-------|--------|-------|
-| Task 1 | #55 | open | Wire realized day P&L into the circuit breaker in `app/core/engine.py` — derive `realized_pnl = balance − day_start_balance` from a fresh OANDA summary before each signal check and persist it to `account_state`, so the −3% day-loss guard can halt |
+| Task 1 | #55 | closed | Wire realized day P&L into the circuit breaker in `app/core/engine.py` — derive `realized_pnl = balance − day_start_balance` from a fresh OANDA summary before each signal check and persist it to `account_state`, so the −3% day-loss guard can halt |
 | Task 2 | #56 | open | Free pending setups on DeepSeek fail-safe in `app/core/engine.py` — a `fail_safe:` verdict frees the setup key so the signal re-evaluates on the next candle; a genuine veto keeps it pending; record a new `OUTCOME_FAILSAFE` |
 | Task 3 | #57 | open | Remove the redundant double `_pending.pop(key, None)` in `app/core/engine.py` filter branches — each blocked branch pops the key exactly once, no behavior change |
 | Task 4 | #58 | open | Warm the H1 EMA(200) trend join at cold start — add a validated `backfill_count` setting (default 1000) used by the engine's OANDA backfill so a cold-started frame resamples to ≥ 200 H1 rows |
