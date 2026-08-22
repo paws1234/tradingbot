@@ -90,7 +90,8 @@ INSTRUMENT_STRATEGIES: dict[str, tuple[str, ...]] = {
 }
 
 # History is capped so the process never grows without bound. 1000 M15 bars
-# (~10 days) comfortably covers the H1 EMA(200) trend warm-up.
+# (~10 days) comfortably covers the H1 EMA(200) trend warm-up; the cold-start
+# backfill depth is ``settings.backfill_count`` (demo-hardening Task 4).
 CANDLE_LIMIT = 1000
 
 # Outcomes ``_process_signal`` reports, for tests and future /status.
@@ -299,9 +300,16 @@ class TradingEngine:
                 logger.exception("candle %s failed for %s", closed.time, instrument)
 
     async def _backfill(self, instrument: str) -> list[Candle]:
-        """Recent closed candles to warm the indicators; [] on failure (degrade)."""
+        """Recent closed candles to warm the indicators; [] on failure (degrade).
+
+        Requests ``settings.backfill_count`` closed bars (default 1000) so a
+        cold-started frame resamples to ≥ 200 H1 rows and the EMA(200) trend
+        join seeds from real history instead of a single close.
+        """
         try:
-            return await self._oanda.get_candles(instrument)
+            return await self._oanda.get_candles(
+                instrument, count=self._settings.backfill_count
+            )
         except (httpx.HTTPError, ValueError) as exc:
             logger.error(
                 "backfill failed for %s (%s); strategies warm up live", instrument, exc

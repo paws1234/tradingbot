@@ -22,7 +22,7 @@
 
 ## Phase 1 — Cold-start correctness
 
-- [ ] Task 4: Warm the H1 EMA(200) trend join at cold start — add a validated `backfill_count` setting (default 1000) used by the engine's OANDA backfill so a cold-started frame resamples to ≥ 200 H1 rows
+- [~] Task 4: Warm the H1 EMA(200) trend join at cold start — add a validated `backfill_count` setting (default 1000) used by the engine's OANDA backfill so a cold-started frame resamples to ≥ 200 H1 rows
   - Acceptance criteria: cold-start backfill requests ≥ 1000 M15 bars by default
   - Acceptance criteria: a 1000-bar frame resampled to H1 yields ≥ 200 rows (test)
   - Acceptance criteria: `backfill_count` configurable via env and validated > 0

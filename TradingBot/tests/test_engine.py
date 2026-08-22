@@ -48,6 +48,7 @@ from app.core.engine import (
     active_strategies,
     emit_signals,
 )
+from app.indicators.technical import resample_h1
 from app.models.schemas import (
     Candle,
     NewsItem,
@@ -997,8 +998,9 @@ async def test_stream_builds_candles_and_dispatches(
     await asyncio_gather_tasks(h)
     await h.engine.stop()
 
-    # Backfill used the default count (500 closed bars) on the REST client.
-    assert h.oanda.candle_requests == [("XAU_USD", None, 500)]
+    # Backfill used the default backfill_count (1000 closed bars) so the cold
+    # frame resamples to ≥ 200 H1 rows for the EMA(200) trend join.
+    assert h.oanda.candle_requests == [("XAU_USD", None, 1000)]
     assert h.oanda.placed  # the streamed candle reached the order desk
 
 
@@ -1015,6 +1017,53 @@ async def test_backfill_failure_degrades_to_empty_frame(
 
     assert "XAU_USD" in h.engine._history
     assert h.engine._history["XAU_USD"].empty
+
+
+@pytest.mark.asyncio
+async def test_backfill_requests_configured_backfill_count(
+    make_engine: Callable[..., Harness],
+) -> None:
+    # backfill_count is configurable via env — the engine honors the setting.
+    h = make_engine(backfill_count=1500)
+
+    await h.engine.start()
+    await asyncio_gather_tasks(h)
+    await h.engine.stop()
+
+    assert h.oanda.candle_requests == [("XAU_USD", None, 1500)]
+
+
+@pytest.mark.asyncio
+async def test_cold_start_backfill_resamples_to_enough_h1_rows(
+    make_engine: Callable[..., Harness],
+) -> None:
+    # A default cold-start backfill (1000 M15 bars) must seed the H1 EMA(200)
+    # trend join: the cold frame resamples to ≥ 200 H1 rows (task 4).
+    start = datetime(2026, 8, 1, 0, 0, tzinfo=timezone.utc)
+    h = make_engine(
+        oanda=FakeOanda(
+            candles=[
+                Candle(
+                    time=start + timedelta(minutes=15 * i),
+                    open=100.0,
+                    high=101.0,
+                    low=99.0,
+                    close=100.5,
+                    volume=10,
+                )
+                for i in range(1000)
+            ]
+        )
+    )
+
+    await h.engine.start()
+    await asyncio_gather_tasks(h)
+    await h.engine.stop()
+
+    assert h.oanda.candle_requests == [("XAU_USD", None, 1000)]
+    frame = h.engine._history["XAU_USD"]
+    assert len(frame) == 1000
+    assert len(resample_h1(frame)) >= 200
 
 
 @pytest.mark.asyncio
