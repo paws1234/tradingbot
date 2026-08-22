@@ -378,7 +378,6 @@ class TradingEngine:
             logger.info(
                 "signal blocked by blackout for %s: %s", signal.instrument, reason
             )
-            self._pending.pop(key, None)
             return self._outcome(signal, OUTCOME_BLOCKED_BLACKOUT, reason)
 
         await self._store.insert_signal(signal.model_dump())
