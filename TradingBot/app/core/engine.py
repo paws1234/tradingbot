@@ -69,7 +69,7 @@ from app.data.finnhub import FinnhubClient
 from app.data.mongo import MongoStore
 from app.data.oanda import OandaClient
 from app.indicators.technical import resample_h1
-from app.models.schemas import Candle, PriceTick, Signal
+from app.models.schemas import Candle, PriceTick, Signal, TradeDecision
 from app.strategy.filters import CIRCUIT_BREAKER_DAY_LOSS, circuit_breaker, in_blackout
 from app.strategy.signals import (
     STRATEGY_INVALIDATED,
@@ -96,10 +96,17 @@ CANDLE_LIMIT = 1000
 # Outcomes ``_process_signal`` reports, for tests and future /status.
 OUTCOME_DISPATCHED = "dispatched"
 OUTCOME_VETOED = "vetoed"
+OUTCOME_FAILSAFE = "failsafe"
 OUTCOME_BLOCKED_BREAKER = "blocked_breaker"
 OUTCOME_BLOCKED_BLACKOUT = "blocked_blackout"
 OUTCOME_DUPLICATE = "duplicate"
 OUTCOME_UNSIZED = "unsized"
+
+# DeepSeek stamps an unavailable-gate verdict with this reason prefix
+# (app/data/deepseek.py::_fail_safe). A fail-safe says nothing about the
+# setup's quality — only that the veto gate could not produce a verdict — so
+# the engine treats it as non-terminal (demo-hardening Task 2).
+FAIL_SAFE_PREFIX = "fail_safe:"
 
 # Setup lifecycle states (strategy.md §6.4). Only STATE_PENDING blocks a
 # re-fire; filled/invalidated/expired keys are freed for a fresh setup.
@@ -378,6 +385,13 @@ class TradingEngine:
         decision = await self._deepseek.evaluate(signal)
         await self._store.log_decision(signal, decision)
 
+        if self._is_fail_safe(decision):
+            # The veto gate was unavailable — it said nothing about this setup.
+            # Free the key so the signal re-evaluates on the next closed candle
+            # once the gate recovers, instead of blocking the setup for the day.
+            self._pending.pop(key, None)
+            return self._outcome(signal, OUTCOME_FAILSAFE, decision.reason)
+
         if not (
             decision.execute and decision.confidence >= self._settings.min_confidence
         ):
@@ -451,6 +465,16 @@ class TradingEngine:
             self._settings.oanda_account_id, document
         )
         return document
+
+    @staticmethod
+    def _is_fail_safe(decision: TradeDecision) -> bool:
+        """True when the veto gate was unavailable rather than vetoing.
+
+        deepseek.py stamps every un-verdictable reply (API failure, unparseable
+        model output) with a ``fail_safe:`` reason. Such a verdict is
+        non-terminal — the setup gets a fresh veto on the next closed candle.
+        """
+        return decision.reason.startswith(FAIL_SAFE_PREFIX)
 
     def _append_candle(self, instrument: str, candle: Candle) -> pd.DataFrame:
         """Append a closed candle to the instrument's history; cap the frame."""

@@ -7,7 +7,7 @@
   - Scope in: engine breaker feed + Mongo upsert + tests
   - Scope out: order lifecycle / exit management
 
-- [ ] Task 2: Free pending setups on DeepSeek fail-safe in `app/core/engine.py` — a `fail_safe:` verdict frees the setup key so the signal re-evaluates on the next candle; a genuine veto keeps it pending; record a new `OUTCOME_FAILSAFE`
+- [~] Task 2: Free pending setups on DeepSeek fail-safe in `app/core/engine.py` — a `fail_safe:` verdict frees the setup key so the signal re-evaluates on the next candle; a genuine veto keeps it pending; record a new `OUTCOME_FAILSAFE`
   - Acceptance criteria: on a fail-safe decision the pending key is freed and the next closed candle re-emits the signal (engine test)
   - Acceptance criteria: on a genuine veto the key stays pending and later candles report `duplicate`
   - Acceptance criteria: `OUTCOME_FAILSAFE` returned for fail-safe verdicts
