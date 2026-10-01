@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     account_type: Literal["practice", "live"] = "practice"
     instruments: list[str] = "XAU_USD"
     granularity: Granularity = "M15"
+    # Cold-start backfill depth: how many closed bars the engine requests to
+    # warm the H1 EMA(200) trend join (1000 M15 ≈ 250 H1 rows).
+    backfill_count: int = Field(default=1000, gt=0)
 
     # --- DeepSeek ---
     deepseek_api_key: str

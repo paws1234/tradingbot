@@ -25,6 +25,7 @@ def test_defaults() -> None:
     assert s.account_type == "practice"
     assert s.instruments == ["XAU_USD"]
     assert s.granularity == "M15"
+    assert s.backfill_count == 1000
     assert s.strategies == ALL_STRATEGIES
     assert s.min_confidence == 7
     assert s.daily_loss_limit_pct == 0.03
@@ -65,6 +66,8 @@ def test_strategies_csv_parsing() -> None:
     [
         ("account_type", "paper"),
         ("granularity", "M7"),
+        ("backfill_count", 0),
+        ("backfill_count", -100),
         ("port", 0),
         ("port", 70000),
         ("blackout_minutes", -1),
@@ -115,6 +118,7 @@ def test_loads_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "MONGODB_URI": "mongodb://localhost:27017",
         "FINNHUB_API_KEY": "finnhub-key",
         "STRATEGIES": "ema_fvg",
+        "BACKFILL_COUNT": "1500",
     }
     for key, value in env.items():
         monkeypatch.setenv(key, value)
@@ -122,6 +126,7 @@ def test_loads_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.account_type == "live"
     assert s.instruments == ["XAU_USD", "EUR_USD"]
     assert s.strategies == ["ema_fvg"]
+    assert s.backfill_count == 1500
 
 
 def test_get_settings_is_cached(monkeypatch: pytest.MonkeyPatch) -> None:
